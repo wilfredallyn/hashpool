@@ -99,6 +99,7 @@ ssh "$VPS_USER@$VPS_HOST" << 'EOF'
   pkill -f stats_proxy || true
   pkill -f web_pool || true
   pkill -f web_proxy || true
+  pkill -9 bitcoind || true
 
   sleep 1
 
