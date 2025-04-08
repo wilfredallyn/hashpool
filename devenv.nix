@@ -17,6 +17,8 @@
   processNames = lib.attrNames config.processes;
 in {
   env.BITCOIND_DATADIR = config.devenv.root + "/.devenv/state/bitcoind";
+  env.REDIS_HOST = "localhost";
+  env.REDIS_PORT = "6379";
 
   # Ensure logs directory exists before processes run
   tasks.create-logs-dir = {
@@ -31,6 +33,7 @@ in {
       bitcoind
       pkgs.just
       pkgs.coreutils # Provides stdbuf for disabling output buffering
+      pkgs.redis
     ]
     ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [pkgs.darwin.apple_sdk.frameworks.Security];
 
@@ -42,6 +45,12 @@ in {
 
   # https://devenv.sh/processes/
   processes = {
+    redis = {
+      exec = withLogging ''
+        mkdir -p ${config.devenv.root}/.devenv/state/redis
+        redis-server --dir ${config.devenv.root}/.devenv/state/redis --port $REDIS_PORT
+      '' "redis.log";
+    };
     local-pool = {exec = withLogging "cargo -C roles/pool -Z unstable-options run -- -c $DEVENV_ROOT/roles/pool/config-examples/pool-config-local-tp-example.toml" "local-pool.log";};
     job-server = {exec = withLogging "cargo -C roles/jd-server -Z unstable-options run -- -c $DEVENV_ROOT/roles/jd-server/config-examples/jds-config-local-example.toml" "job-server.log";};
     job-client = {exec = withLogging "cargo -C roles/jd-client -Z unstable-options run -- -c $DEVENV_ROOT/roles/jd-client/config-examples/jdc-config-local-example.toml" "job-client.log";};
