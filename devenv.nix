@@ -31,6 +31,7 @@ in {
       bitcoind
       pkgs.just
       pkgs.coreutils # Provides stdbuf for disabling output buffering
+      pkgs.protobuf # Provides protoc compiler
     ]
     ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [pkgs.darwin.apple_sdk.frameworks.Security];
 
@@ -42,7 +43,7 @@ in {
 
   # https://devenv.sh/processes/
   processes = {
-    local-pool = {exec = withLogging "cargo -C roles/pool -Z unstable-options run -- -c $DEVENV_ROOT/roles/pool/config-examples/pool-config-local-tp-example.toml" "local-pool.log";};
+    local-pool = {exec = withLogging "env RUST_BACKTRACE=1 RUST_LOG=debug cargo -C roles/pool -Z unstable-options run -- -c $DEVENV_ROOT/roles/pool/config-examples/pool-config-local-tp-example.toml" "local-pool.log";};
     job-server = {exec = withLogging "cargo -C roles/jd-server -Z unstable-options run -- -c $DEVENV_ROOT/roles/jd-server/config-examples/jds-config-local-example.toml" "job-server.log";};
     job-client = {exec = withLogging "cargo -C roles/jd-client -Z unstable-options run -- -c $DEVENV_ROOT/roles/jd-client/config-examples/jdc-config-local-example.toml" "job-client.log";};
     translator-proxy = {exec = withLogging "cargo -C roles/translator -Z unstable-options run -- -c $DEVENV_ROOT/roles/translator/config-examples/tproxy-config-local-jdc-example.toml" "translator-proxy.log";};
@@ -63,9 +64,7 @@ in {
       '' "miner.log";
     };
     cdk-mintd = {
-      exec = withLogging ''
-        cargo -C roles/mint -Z unstable-options run -- -c $DEVENV_ROOT/roles/mint/config/mint.config.toml
-      '' "mint.log";
+      exec = withLogging "env RUST_BACKTRACE=1 RUST_LOG=debug cargo -C roles/mint -Z unstable-options run -- -c $DEVENV_ROOT/roles/mint/config/mint.config.toml" "mint.log";
     };
   };
 

@@ -1,0 +1,13 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "sudo-attach",
+            "type": "shell",
+            "command": "sudo sysctl kernel.yama.ptrace_scope=0",
+            "presentation": {
+                "reveal": "silent"
+            }
+        }
+    ]
+} 

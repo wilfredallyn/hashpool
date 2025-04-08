@@ -1,0 +1,15 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "attach",
+            "name": "Attach to mint process",
+            "pid": "${command:pickProcess}",
+            "sourceLanguages": ["rust"],
+            "cwd": "${workspaceFolder}",
+            "program": "${workspaceFolder}/roles/mint/target/debug/cdk-mintd"
+            // "preLaunchTask": "sudo-attach",
+        }
+    ]
+}
