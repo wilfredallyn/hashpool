@@ -70,6 +70,8 @@ impl PoolSv2 {
         let (s_new_t, r_new_t) = bounded(10); // New template updates.
         let (s_prev_hash, r_prev_hash) = bounded(10); // Previous hash updates.
         let (s_solution, r_solution) = bounded(10); // Share solution submissions from downstream.
+        // Quote dispatcher channel for share-to-quote flow (optional, for hashpool integration)
+        let (s_quote_dispatcher, _r_quote_dispatcher) = bounded(100); // Quote requests for accepted shares.
 
         // This channel does something weird, it sends zero sized data from downstream upon
         // retrieval of any message from template receiver, and make the template receiver
@@ -126,6 +128,7 @@ impl PoolSv2 {
             r_new_t,
             r_prev_hash,
             s_solution,
+            Some(s_quote_dispatcher),
             s_message_recv_signal,
             status::Sender::DownstreamListener(status_tx),
             config.shares_per_minute(),

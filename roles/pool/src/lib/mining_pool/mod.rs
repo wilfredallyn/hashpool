@@ -82,6 +82,26 @@ pub type StdFrame = StandardSv2Frame<Message>;
 /// A standard SV2 frame that can contain either type of frame.
 pub type EitherFrame = StandardEitherFrame<Message>;
 
+/// Request to create a quote for an accepted share.
+///
+/// This is passed to the quote dispatcher whenever a share is accepted by the pool.
+/// The dispatcher uses this information to create a mint quote in the Cashu mint service.
+#[derive(Debug, Clone)]
+pub struct ShareQuoteRequest {
+    /// The channel ID that submitted the share
+    pub channel_id: u32,
+    /// The sequence number from the share submission
+    pub sequence_number: u32,
+    /// The share header hash (32 bytes)
+    pub header_hash: Vec<u8>,
+    /// The block version from the share
+    pub block_version: u32,
+    /// The block timestamp from the share
+    pub block_timestamp: u32,
+    /// The block nonce from the share
+    pub block_nonce: u32,
+}
+
 /// Represents a single connection to a downstream miner.
 ///
 /// Encapsulates the state and communication channels for one miner. An instance
@@ -103,6 +123,9 @@ pub struct Downstream {
     // Sender channel to forward valid `SubmitSolution` messages received from this
     // downstream miner to the main [`Pool`] task, which then sends them upstream.
     solution_sender: Sender<SubmitSolution<'static>>,
+    // Sender channel to forward quote requests for accepted shares to the mint quote dispatcher.
+    // This enables quote creation for each accepted share.
+    quote_dispatcher_sender: Option<Sender<ShareQuoteRequest>>,
     channel_id_factory: IdFactory,
     extranonce_prefix_factory_extended: Arc<Mutex<ExtendedExtranonce>>,
     extranonce_prefix_factory_standard: Arc<Mutex<ExtendedExtranonce>>,
@@ -141,6 +164,9 @@ pub struct Pool {
     // Sender channel to forward solutions received from any downstream connection
     // to the upstream Template Provider connection task.
     solution_sender: Sender<SubmitSolution<'static>>,
+    // Sender channel to forward quote requests for accepted shares to the mint quote dispatcher.
+    // This is optional and can be None if quote dispatching is not configured.
+    quote_dispatcher_sender: Option<Sender<ShareQuoteRequest>>,
     // Flag indicating whether at least one `NewTemplate` has been received and processed.
     // Might be used to ensure initial jobs are sent before accepting solutions??.
     new_template_processed: bool,
@@ -169,6 +195,7 @@ impl Downstream {
         mut receiver: Receiver<EitherFrame>,
         mut sender: Sender<EitherFrame>,
         solution_sender: Sender<SubmitSolution<'static>>,
+        quote_dispatcher_sender: Option<Sender<ShareQuoteRequest>>,
         pool: Arc<Mutex<Pool>>,
         status_tx: status::Sender,
         address: SocketAddr,
@@ -228,6 +255,7 @@ impl Downstream {
             requires_standard_jobs,
             requires_custom_work,
             solution_sender,
+            quote_dispatcher_sender,
             channel_id_factory,
             extended_channels: HashMap::new(),
             standard_channels: HashMap::new(),
@@ -501,6 +529,7 @@ impl Pool {
         coinbase_reward_script: CoinbaseRewardScript,
     ) -> PoolResult<()> {
         let solution_sender = self_.safe_lock(|p| p.solution_sender.clone())?;
+        let quote_dispatcher_sender = self_.safe_lock(|p| p.quote_dispatcher_sender.clone())?;
         let status_tx = self_.safe_lock(|s| s.status_tx.clone())?;
 
         // Create the Downstream instance
@@ -508,6 +537,7 @@ impl Pool {
             receiver,
             sender,
             solution_sender,
+            quote_dispatcher_sender,
             self_.clone(),
             // convert Listener variant to Downstream variant
             status_tx.listener_to_connection(),
@@ -982,6 +1012,7 @@ impl Pool {
         new_template_rx: Receiver<NewTemplate<'static>>,
         new_prev_hash_rx: Receiver<SetNewPrevHashTdp<'static>>,
         solution_sender: Sender<SubmitSolution<'static>>,
+        quote_dispatcher_sender: Option<Sender<ShareQuoteRequest>>,
         sender_message_received_signal: Sender<()>,
         status_tx: status::Sender,
         shares_per_minute: f32,
@@ -1027,6 +1058,7 @@ impl Pool {
         let pool = Arc::new(Mutex::new(Pool {
             downstreams: HashMap::with_hasher(BuildNoHashHasher::default()),
             solution_sender,
+            quote_dispatcher_sender,
             new_template_processed: false,
             downstream_id_factory: IdFactory::new(),
             status_tx: status_tx.clone(),
