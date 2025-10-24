@@ -1,0 +1,41 @@
+[package]
+name = "mint"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+home = "0.5"
+hyper = "1"
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+bip39 = "2.0"
+tokio-stream = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bitcoin = { version= "0.32.2" }
+uuid = { version = "1.7", features = ["v4"] }
+hex = "0.4"
+
+cdk = { git = "https://github.com/vnprc/cdk.git", package = "cdk", rev = "62114cf6" }
+cdk-axum = { git = "https://github.com/vnprc/cdk.git", package = "cdk-axum", rev = "62114cf6"}
+cdk-mintd = { git = "https://github.com/vnprc/cdk.git", package = "cdk-mintd", rev = "62114cf6" }
+cdk-sqlite = { git = "https://github.com/vnprc/cdk.git", package = "cdk-sqlite", rev = "62114cf6" }
+cdk-redb = { git = "https://github.com/vnprc/cdk.git", package = "cdk-redb", rev = "62114cf6" }
+cdk-signatory = { git = "https://github.com/vnprc/cdk.git", package = "cdk-signatory", rev = "62114cf6" }
+toml = "0.8.22"
+
+shared_config = { path = "../roles-utils/config" }
+mint_pool_messaging = { path = "../roles-utils/mint-pool-messaging" }
+network_helpers_sv2 = { path = "../roles-utils/network-helpers" }
+roles_logic_sv2 = { path = "../../protocols/v2/roles-logic-sv2" }
+codec_sv2 = { path = "../../protocols/v2/codec-sv2" }
+mining_sv2 = { path = "../../protocols/v2/subprotocols/mining" }
+binary_sv2 = { path = "../../protocols/v2/binary-sv2" }
+mint_quote_sv2 = { path = "../../protocols/v2/subprotocols/mint-quote" }
+const_sv2 = { path = "../../protocols/v2/const-sv2" }
+ehash = { path = "../../protocols/ehash" }
+async-channel = "1.8.0"

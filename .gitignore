@@ -17,9 +17,22 @@ lcov.info
 **/conf/**
 cobertura.xml
 /roles/*/*-config.toml
+/roles/Cargo.lock
+/utils/message-generator/Cargo.lock
 /examples/*/Cargo.lock
 /scripts/sv2.h
 /test/integration-tests/template-provider
 **/template-provider
 stratum-message-generator
 *.log
+/logs
+
+# Devenv
+.devenv*
+**/Cargo.toml.bak
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml

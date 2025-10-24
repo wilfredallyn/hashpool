@@ -1,0 +1,11 @@
+[package]
+name = "shared_config"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+config = { package = "config", version = "0.14", features = ["toml"] }
+bitcoin = "0.32"
+hex = "0.4"
