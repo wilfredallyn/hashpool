@@ -12,9 +12,14 @@
 //! etc.) for specialized functionalities.
 #![allow(clippy::module_inception)]
 use async_channel::unbounded;
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, path::Path, sync::Arc, str::FromStr};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
+use anyhow::{Result, Context};
+use bip39::Mnemonic;
+use cdk::wallet::Wallet;
+use cdk_sqlite::WalletSqliteDatabase;
+use cdk::nuts::CurrencyUnit;
 
 pub use v1::server_to_client;
 
@@ -37,9 +42,19 @@ mod task_manager;
 pub mod utils;
 
 /// The main struct that manages the SV1/SV2 translator.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TranslatorSv2 {
     config: TranslatorConfig,
+    wallet: Option<Arc<Wallet>>,
+}
+
+impl std::fmt::Debug for TranslatorSv2 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TranslatorSv2")
+            .field("config", &self.config)
+            .field("wallet", &self.wallet.is_some())
+            .finish()
+    }
 }
 
 impl TranslatorSv2 {
@@ -48,15 +63,106 @@ impl TranslatorSv2 {
     /// Initializes the translator with the given configuration and sets up
     /// the reconnect wait time.
     pub fn new(config: TranslatorConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            wallet: None,
+        }
+    }
+
+    /// Helper function to resolve and prepare DB paths
+    fn resolve_and_prepare_db_path(config_path: &str) -> std::path::PathBuf {
+        let path = Path::new(config_path);
+        let full_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()
+                .expect("Failed to get current working directory")
+                .join(path)
+        };
+
+        if let Some(parent) = full_path.parent() {
+            if !parent.exists() {
+                std::fs::create_dir_all(parent).expect("Failed to create parent directory for DB path");
+            }
+        }
+
+        full_path
+    }
+
+    /// Creates and initializes a wallet for the translator
+    async fn create_wallet(
+        mint_url: String,
+        mnemonic: String,
+        db_path: String,
+    ) -> Result<Arc<Wallet>> {
+        debug!("Parsing mnemonic...");
+        let seed = Mnemonic::from_str(&mnemonic)
+            .with_context(|| format!("Invalid mnemonic: '{}'", mnemonic))?
+            .to_seed_normalized("");
+        let seed: [u8; 64] = seed.try_into()
+            .map_err(|_| anyhow::anyhow!("Seed must be exactly 64 bytes"))?;
+        debug!("Seed derived.");
+
+        let db_path = Self::resolve_and_prepare_db_path(&db_path);
+        debug!("Resolved db_path: {}", db_path.display());
+
+        debug!("Creating localstore...");
+        let localstore = WalletSqliteDatabase::new(db_path)
+            .await
+            .context("WalletSqliteDatabase::new failed")?;
+
+        debug!("Creating wallet...");
+        // TODO: Move "HASH" currency unit to configuration (Phase 2)
+        let wallet = Wallet::new(
+            &mint_url,
+            CurrencyUnit::Custom("HASH".to_string()),
+            Arc::new(localstore),
+            seed,
+            None,
+        )
+        .context("Failed to create wallet")?;
+        debug!("Wallet created.");
+
+        let balance = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(wallet.total_balance())
+        });
+        debug!("Wallet balance: {:?}", balance);
+
+        Ok(Arc::new(wallet))
     }
 
     /// Starts the translator.
     ///
     /// This method starts the main event loop, which handles connections,
     /// protocol translation, job management, and status reporting.
-    pub async fn start(self) {
+    pub async fn start(mut self) {
         info!("Starting Translator Proxy...");
+
+        // Initialize and validate wallet config if mint is configured
+        if self.config.mint.is_some() {
+            self.config.wallet.initialize()
+                .expect("Failed to initialize wallet config");
+
+            let mint_url = self.config.mint
+                .as_ref()
+                .map(|m| m.url.clone())
+                .expect("Mint URL required for wallet");
+
+            match Self::create_wallet(
+                mint_url,
+                self.config.wallet.mnemonic.clone(),
+                self.config.wallet.db_path.clone(),
+            ).await {
+                Ok(wallet) => {
+                    info!("Wallet initialized successfully");
+                    self.wallet = Some(wallet);
+                }
+                Err(e) => {
+                    error!("Failed to create wallet: {}", e);
+                    // Continue without wallet - quote functionality won't work but translator can still function
+                }
+            }
+        }
 
         let (notify_shutdown, _) = tokio::sync::broadcast::channel::<ShutdownMessage>(1);
         let (shutdown_complete_tx, mut shutdown_complete_rx) = mpsc::channel::<()>(1);

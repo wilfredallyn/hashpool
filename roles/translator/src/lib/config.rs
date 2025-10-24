@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use key_utils::Secp256k1PublicKey;
 use serde::Deserialize;
+use shared_config::{MintConfig, WalletConfig};
 
 /// Configuration for the Translator.
 #[derive(Debug, Deserialize, Clone)]
@@ -38,6 +39,10 @@ pub struct TranslatorConfig {
     /// Whether to aggregate all downstream connections into a single upstream channel.
     /// If true, all miners share one channel. If false, each miner gets its own channel.
     pub aggregate_channels: bool,
+    /// Wallet configuration for managing ehash tokens
+    pub wallet: WalletConfig,
+    /// Mint service configuration for quote operations
+    pub mint: Option<MintConfig>,
     /// The path to the log file for the Translator.
     log_file: Option<PathBuf>,
 }
@@ -77,6 +82,8 @@ impl TranslatorConfig {
         downstream_extranonce2_size: u16,
         user_identity: String,
         aggregate_channels: bool,
+        wallet: WalletConfig,
+        mint: Option<MintConfig>,
     ) -> Self {
         Self {
             upstreams,
@@ -88,6 +95,8 @@ impl TranslatorConfig {
             user_identity,
             downstream_difficulty_config,
             aggregate_channels,
+            wallet,
+            mint,
             log_file: None,
         }
     }
@@ -162,8 +171,16 @@ mod tests {
 
     #[test]
     fn test_translator_config_creation() {
+        use shared_config::WalletConfig;
+
         let upstreams = vec![create_test_upstream()];
         let difficulty_config = create_test_difficulty_config();
+        let wallet = WalletConfig {
+            mnemonic: "test mnemonic".to_string(),
+            db_path: "/tmp/wallet.db".to_string(),
+            locking_pubkey: None,
+            locking_privkey: None,
+        };
 
         let config = TranslatorConfig::new(
             upstreams,
@@ -175,6 +192,8 @@ mod tests {
             4,
             "test_user".to_string(),
             true,
+            wallet,
+            None,
         );
 
         assert_eq!(config.upstreams.len(), 1);
@@ -190,8 +209,16 @@ mod tests {
 
     #[test]
     fn test_translator_config_log_dir() {
+        use shared_config::WalletConfig;
+
         let upstreams = vec![create_test_upstream()];
         let difficulty_config = create_test_difficulty_config();
+        let wallet = WalletConfig {
+            mnemonic: "test mnemonic".to_string(),
+            db_path: "/tmp/wallet.db".to_string(),
+            locking_pubkey: None,
+            locking_privkey: None,
+        };
 
         let mut config = TranslatorConfig::new(
             upstreams,
@@ -203,6 +230,8 @@ mod tests {
             4,
             "test_user".to_string(),
             false,
+            wallet,
+            None,
         );
 
         assert!(config.log_dir().is_none());
@@ -217,6 +246,8 @@ mod tests {
 
     #[test]
     fn test_multiple_upstreams() {
+        use shared_config::WalletConfig;
+
         let upstream1 = create_test_upstream();
         let mut upstream2 = create_test_upstream();
         upstream2.address = "192.168.1.1".to_string();
@@ -224,6 +255,12 @@ mod tests {
 
         let upstreams = vec![upstream1, upstream2];
         let difficulty_config = create_test_difficulty_config();
+        let wallet = WalletConfig {
+            mnemonic: "test mnemonic".to_string(),
+            db_path: "/tmp/wallet.db".to_string(),
+            locking_pubkey: None,
+            locking_privkey: None,
+        };
 
         let config = TranslatorConfig::new(
             upstreams,
@@ -235,6 +272,8 @@ mod tests {
             4,
             "test_user".to_string(),
             true,
+            wallet,
+            None,
         );
 
         assert_eq!(config.upstreams.len(), 2);
@@ -246,10 +285,19 @@ mod tests {
 
     #[test]
     fn test_vardiff_disabled_config() {
+        use shared_config::WalletConfig;
+
         let mut difficulty_config = create_test_difficulty_config();
         difficulty_config.enable_vardiff = false;
 
         let upstreams = vec![create_test_upstream()];
+        let wallet = WalletConfig {
+            mnemonic: "test mnemonic".to_string(),
+            db_path: "/tmp/wallet.db".to_string(),
+            locking_pubkey: None,
+            locking_privkey: None,
+        };
+
         let config = TranslatorConfig::new(
             upstreams,
             "0.0.0.0".to_string(),
@@ -260,6 +308,8 @@ mod tests {
             4,
             "test_user".to_string(),
             false,
+            wallet,
+            None,
         );
 
         assert!(!config.downstream_difficulty_config.enable_vardiff);

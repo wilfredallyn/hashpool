@@ -839,11 +839,19 @@ mod tests {
     use std::{collections::HashMap, str::FromStr};
 
     fn create_test_config() -> TranslatorConfig {
+        use shared_config::WalletConfig;
+
         let pubkey_str = "9bDuixKmZqAJnrmP746n8zU1wyAQRrus7th9dxnkPg6RzQvCnan";
         let pubkey = Secp256k1PublicKey::from_str(pubkey_str).unwrap();
 
         let upstream = Upstream::new("127.0.0.1".to_string(), 4444, pubkey);
         let difficulty_config = DownstreamDifficultyConfig::new(100.0, 5.0, true);
+        let wallet = WalletConfig {
+            mnemonic: "test mnemonic".to_string(),
+            db_path: "/tmp/test_wallet.db".to_string(),
+            locking_pubkey: None,
+            locking_privkey: None,
+        };
 
         TranslatorConfig::new(
             vec![upstream],
@@ -855,6 +863,8 @@ mod tests {
             4,                     // downstream_extranonce2_size
             "test_user".to_string(),
             true, // aggregate_channels
+            wallet,
+            None, // No mint configured for tests
         )
     }
 

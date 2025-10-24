@@ -29,6 +29,7 @@ mining_device = { path = "../../roles/test-utils/mining-device" }
 mining_device_sv1 = { path = "../../roles/test-utils/mining-device-sv1" }
 pool_sv2 = { path = "../../roles/pool" }
 config_helpers_sv2 = { path = "../../roles/roles-utils/config-helpers" }
+shared_config = { path = "../../roles/roles-utils/config" }
 stratum-common = { path = "../../common" , features = ["with_network_helpers", "sv1"]}
 translator_sv2 = { path = "../../roles/translator" }
 sv1_api = { path = "../../protocols/v1", optional = true }
