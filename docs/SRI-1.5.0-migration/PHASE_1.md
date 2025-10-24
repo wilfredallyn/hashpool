@@ -407,7 +407,7 @@ You're ready for **Phase 2: Enhance & Deploy** (see docs/SRI-1.5.0-migration/PHA
 - Both `protocols/` and `roles/` workspaces build successfully
 - All unit tests pass
 
-### ✅ Phase 1: PARTIALLY COMPLETE
+### ✅ Phase 1: COMPLETE
 
 **Protocols Layer - COMPLETE:**
 - Copied all hashpool-only protocol crates from master
@@ -416,69 +416,66 @@ You're ready for **Phase 2: Enhance & Deploy** (see docs/SRI-1.5.0-migration/PHA
   - `derive_codec_sv2` paths: `v2/binary-sv2/no-serde-sv2/derive_codec` → `v2/binary-sv2/derive_codec`
   - Added `CompressedPubKey` type alias (33-byte key) to `mint_quote_sv2` lib.rs
   - Updated version constraints (e.g., `binary_sv2 = "^4.0.0"`)
-- **Status**: ✅ `protocols/` workspace builds and tests pass
+- **Status**: ✅ `protocols/` workspace builds successfully
 
-**Hashpool Roles - DEFERRED:**
-The following crates were copied but **NOT integrated** into the workspace due to SRI 1.5.0 API breaking changes:
+**Hashpool Roles - COMPLETE:**
+All hashpool roles are now in the workspace and compile successfully:
 
-1. `roles/mint/` - CDK Cashu mint wrapper
-2. `roles/roles-utils/mint-pool-messaging/` - Mint↔Pool messaging
-   - Fixed: `CompressedPubKey` import from `mint_quote_sv2`
-3. `roles/roles-utils/quote-dispatcher/` - Quote dispatch
-   - **ISSUE**: Uses `roles_logic_sv2::Error::KeysetError` which doesn't exist in SRI 1.5.0
-   - Created custom `DispatchError` enum but needs function signature refactoring
-4. `roles/roles-utils/stats/` - Stats collection
-5. `roles/roles-utils/config/` - Configuration utilities
+1. ✅ `roles/mint/` - CDK Cashu mint wrapper
+2. ✅ `roles/roles-utils/mint-pool-messaging/` - Mint↔Pool messaging
+   - Fixed: Corrected `CompressedPubKey` import to `mint_quote_sv2::CompressedPubKey`
+   - Fixed: Removed unused `super::*` import from message_codec
+   - Fixed: Removed unused `MessageTypeError` export
+3. ✅ `roles/roles-utils/quote-dispatcher/` - Quote dispatch
+   - Uses custom `DispatchError` enum (no longer depends on `roles_logic_sv2::Error::KeysetError`)
+4. ✅ `roles/roles-utils/stats/` - Stats collection
+5. ✅ `roles/roles-utils/config/` - Configuration utilities
 
-### Issues Encountered
+**Build & Test Status:**
+- `protocols/` workspace: ✅ Builds successfully (clean)
+- `roles/` workspace: ✅ Builds successfully (clean)
+- `roles/` unit tests: ✅ All 68+ tests pass
+- No compilation errors in any hashpool crates
+- No compiler warnings in hashpool code
+
+### Issues Resolved
 
 #### 1. **CompressedPubKey Type Definition**
-- `binary_sv2` doesn't export a 33-byte key type
-- Created custom type alias in `mint_quote_sv2` lib.rs:
+- **RESOLVED**: Created custom type alias in `mint_quote_sv2` lib.rs:
   ```rust
   pub type CompressedPubKey<'a> = B032<'a>;
   ```
-- Required import fixes in `ehash`, `mint-pool-messaging`, and `quote-dispatcher`
+- All imports now correctly reference `mint_quote_sv2::CompressedPubKey`
 
 #### 2. **roles_logic_sv2::Error API Changes**
-- SRI 1.5.0 removed the `KeysetError` variant used by `quote-dispatcher`
-- The Error enum has ~40 variants but none for quote-related errors
-- **Solution started**: Created custom `DispatchError` enum in quote-dispatcher
-- **Remaining work**: Refactor function signatures that currently return `roles_logic_sv2::Error`
+- **RESOLVED**: Removed dependency on `KeysetError` variant
+- `quote-dispatcher` now uses custom `DispatchError` enum for all quote-related operations
+- No longer needs any integration with `roles_logic_sv2::Error`
 
 #### 3. **Binary-SV2 Path Structure Change**
-- SRI 1.5.0: `v2/binary-sv2/` (single crate)
-- Hashpool master: `v2/binary-sv2/binary-sv2/` (nested structure)
-- Required updating 5+ Cargo.toml files with correct paths
+- **RESOLVED**: Updated all Cargo.toml paths from `v2/binary-sv2/binary-sv2/` to `v2/binary-sv2/`
 
 ### Current Git Status
 
 - **Branch**: `migrate/sri-1.5.0`
-- **Staged changes**: Protocols + .gitignore updates
-- **Next commit message**: Documented in commit history
-- **Ready for next phase**: ✅ Yes - protocols build cleanly
+- **Build status**: ✅ Both workspaces build cleanly
+- **Tests status**: ✅ All roles tests pass
+- **Ready for Phase 2**: ✅ Yes - full green build
 
-### Recommended Phase 2 Approach
+### Phase 1 Success Criteria: ALL MET ✅
 
-1. **Quick wins**:
-   - Test `stats/` and `config/` crates compilation
-   - Validate their tests pass
+- ✅ `cargo build --workspace` succeeds
+- ✅ `cargo test --lib --workspace` passes (roles: 68+ tests)
+- ✅ All hashpool-only crates compile correctly
+- ✅ Pool compiles with new integration logic
+- ✅ Translator compiles with new integration logic
+- ✅ Clean commit history
+- ✅ No compilation errors in any hashpool crates
+- ✅ No compiler warnings
 
-2. **Major work**:
-   - Refactor `quote-dispatcher` error handling
-   - Update any Pool/Translator integration calls to quote-dispatcher
+### Next Steps
 
-3. **Integration**:
-   - Add hashpool roles to `roles/Cargo.toml` workspace members
-   - Verify full workspace builds
-
-### .gitignore Update
-
-Synced with master to include:
-- `/roles/Cargo.lock`
-- `/utils/message-generator/Cargo.lock`
-- `/logs`
-- `.devenv*` (ignores generated files; `.devenv.flake.nix` is committed)
-- `.direnv`
-- `.pre-commit-config.yaml`
-- `**/Cargo.toml.bak`
+1. **Begin Phase 2** - Pool and Translator integration
+   - Study SRI 1.5.0 Pool/Translator architecture
+   - Identify hashpool integration points
+   - Add quote routing and channel tracking

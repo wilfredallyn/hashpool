@@ -11,14 +11,17 @@ pub struct MintPoolMessageHub {
 
     // Pool -> Mint channels
     quote_request_tx: broadcast::Sender<ParsedMintQuoteRequest>,
+    #[allow(dead_code)]
     quote_request_rx: RwLock<Option<broadcast::Receiver<ParsedMintQuoteRequest>>>,
 
     // Mint -> Pool channels
     quote_response_tx: broadcast::Sender<MintQuoteResponseEvent>,
+    #[allow(dead_code)]
     quote_response_rx: RwLock<Option<broadcast::Receiver<MintQuoteResponseEvent>>>,
 
     // Error channels
     quote_error_tx: broadcast::Sender<MintQuoteError<'static>>,
+    #[allow(dead_code)]
     quote_error_rx: RwLock<Option<broadcast::Receiver<MintQuoteError<'static>>>>,
 
     // Active connections tracking
@@ -29,6 +32,7 @@ pub struct MintPoolMessageHub {
 #[derive(Debug, Clone)]
 struct ConnectionInfo {
     role: Role,
+    #[allow(dead_code)]
     connected_at: std::time::Instant,
 }
 

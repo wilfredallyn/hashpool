@@ -3,10 +3,9 @@
 //! This module re-exports message type definitions from the ehash protocol crate
 //! and provides backward compatibility helpers.
 
-use super::*;
-
 // Re-export message types from ehash protocol crate
-pub use ehash::{MessageType, MessageTypeError, MintQuoteMessage};
+pub use ehash::MintQuoteMessage;
+pub use mint_quote_sv2::MessageType;
 
 /// Simple message codec for mint-quote messages
 /// Note: Full SV2 framing will be added in later phases

@@ -5,7 +5,6 @@
 
 use std::sync::Arc;
 
-use binary_sv2::{self};
 use mint_quote_sv2::CompressedPubKey;
 use std::convert::TryFrom;
 use thiserror::Error;
