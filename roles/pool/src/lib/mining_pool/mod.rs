@@ -75,6 +75,10 @@ pub mod setup_connection;
 use setup_connection::SetupConnectionHandler;
 
 pub mod message_handler;
+
+// Module for mint service integration (quote dispatching and channel tracking)
+pub mod mint_integration;
+
 /// Represents a generic SV2 message with a static lifetime.
 pub type Message = AnyMessage<'static>;
 /// A standard SV2 frame containing a message.
@@ -180,6 +184,8 @@ pub struct Pool {
     last_new_prev_hash: Option<SetNewPrevHashTdp<'static>>,
     // string to be written into the coinbase scriptSig on non-JD jobs
     pool_tag_string: String,
+    // Manager for mint service integration (channel tracking, quote dispatching)
+    pub mint_manager: Arc<mint_integration::MintIntegrationManager>,
 }
 
 impl Downstream {
@@ -1055,6 +1061,12 @@ impl Pool {
                 .expect("Failed to create ExtendedExtranonce with valid ranges");
 
         // --- Initialize Pool State ---
+        // Initialize mint integration manager with default mint address
+        // TODO: Move this to PoolConfig instead of hardcoding
+        // The mint service listens on this address by default
+        let mint_address = "127.0.0.1:34260".to_string();
+        let mint_manager = Arc::new(mint_integration::MintIntegrationManager::new(mint_address));
+
         let pool = Arc::new(Mutex::new(Pool {
             downstreams: HashMap::with_hasher(BuildNoHashHasher::default()),
             solution_sender,
@@ -1072,6 +1084,7 @@ impl Pool {
             last_future_template: None,
             last_new_prev_hash: None,
             pool_tag_string: config.pool_signature().clone(),
+            mint_manager,
         }));
 
         let cloned = pool.clone();

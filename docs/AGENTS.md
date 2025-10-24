@@ -216,6 +216,29 @@ cd roles/translator && cargo build
 cargo build --workspace
 ```
 
+This repo has **two separate workspaces** (`protocols/` and `roles/`). If you run `cargo build` from the repository root:
+- **It will fail** with confusing error messages about unresolved imports
+- The errors appear to be real compilation issues but are actually phantom errors from an incomplete build
+
+**Why this happens:**
+- The root directory has NO `Cargo.toml` (by design - the workspaces are separate)
+- Running `cargo build` from root tries to build dependencies across both workspaces without proper context
+- This can lead to stale/cached artifacts causing false errors
+
+**Solution:**
+- Always run builds from the workspace directory:
+  ```bash
+  cd protocols && cargo build  # ✅ Works
+  cd roles && cargo build      # ✅ Works
+  ```
+- Never run `cargo build` from the hashpool root directory without specifying a workspace
+
+**If you encounter phantom build failures:**
+1. Verify you're in the correct workspace directory (`protocols/` or `roles/`)
+2. Check that the source files are correct (the error may be outdated)
+3. Run `cargo clean` from that workspace directory
+4. Rebuild from the workspace directory, not the root
+
 ### Testing
 ```bash
 # Run all tests

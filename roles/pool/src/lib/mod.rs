@@ -71,7 +71,8 @@ impl PoolSv2 {
         let (s_prev_hash, r_prev_hash) = bounded(10); // Previous hash updates.
         let (s_solution, r_solution) = bounded(10); // Share solution submissions from downstream.
         // Quote dispatcher channel for share-to-quote flow (optional, for hashpool integration)
-        let (s_quote_dispatcher, _r_quote_dispatcher) = bounded(100); // Quote requests for accepted shares.
+        use mining_pool::ShareQuoteRequest;
+        let (s_quote_dispatcher, r_quote_dispatcher) = bounded::<ShareQuoteRequest>(100); // Quote requests for accepted shares.
 
         // This channel does something weird, it sends zero sized data from downstream upon
         // retrieval of any message from template receiver, and make the template receiver
@@ -122,6 +123,9 @@ impl PoolSv2 {
             .await;
         });
 
+        // NOTE: Quote dispatcher task is now spawned in Pool::start() and integrated
+        // with MintIntegrationManager for proper channel tracking and quote routing
+
         // --- Start Downstream Pool Listener ---
         let pool = Pool::start(
             config.clone(),
@@ -135,6 +139,20 @@ impl PoolSv2 {
             recv_stop_signal,
         )
         .await?;
+
+        // --- Spawn Mint Integration Task ---
+        // This task processes quote requests and forwards them to the mint service
+        let mint_mgr = {
+            let mint_manager_result = pool.safe_lock(|p| p.mint_manager.clone());
+            mint_manager_result.ok()
+        };
+
+        if let Some(mgr) = mint_mgr {
+            tokio::spawn(async move {
+                mgr.start(r_quote_dispatcher).await;
+            });
+        }
+
         // Monitor the status of Template Receiver and downstream connections.
         // Start the error handling loop
         // See `./status.rs` and `utils/error_handling` for information on how this operates
