@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Hashpool Pool Dashboard</title>
+    <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg">
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        h2 {
+            text-align: center;
+            margin: 30px 0 20px 0;
+            font-size: 1.5em;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 40px;
+        }
+        .stat-box {
+            text-align: center;
+            padding: 20px;
+            border: 1px solid #00ff00;
+            min-width: 150px;
+        }
+        .stat-value {
+            font-size: 2em;
+            margin-top: 10px;
+        }
+        .services-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #00ff00;
+            background: #222;
+        }
+        .services-section h3 {
+            margin-top: 0;
+            text-align: center;
+            color: #00ff00;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #00ff00;
+        }
+        th {
+            background: #0a0a0a;
+            font-weight: bold;
+        }
+        tr:hover {
+            background: #0a0a0a;
+        }
+        .address {
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-up {
+            background-color: #00ff00;
+            box-shadow: 0 0 5px #00ff00;
+        }
+        .status-down {
+            background-color: #ff4444;
+            box-shadow: 0 0 5px #ff4444;
+        }
+        .service-table {
+            margin-bottom: 20px;
+        }
+        .service-table th {
+            background: #333;
+        }
+        .service-icon-header {
+            width: 2.5em;
+        }
+        .service-icon-cell {
+            width: 2.5em;
+            text-align: center;
+        }
+        .proxies-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .proxies-table th,
+        .proxies-table td {
+            padding: 12px;
+            border-bottom: 1px solid #00ff00;
+        }
+        .proxies-icon-header {
+            width: 2.5em;
+        }
+        .proxies-icon-cell {
+            width: 2.5em;
+            text-align: center;
+        }
+        .template-provider-header {
+            text-align: center;
+        }
+        /* {{NAV_ICON_CSS}} */
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="pickaxe-icon">Hashpool Dashboard</h1>
+
+        <div class="services-section">
+            <h3>Service Connections</h3>
+            <table class="service-table">
+                <thead>
+                    <tr>
+                        <th class="service-icon-header"></th>
+                        <th>Service Name</th>
+                        <th>IP</th>
+                        <th>Port</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="services-tbody">
+                </tbody>
+            </table>
+        </div>
+
+        <div class="stats">
+            <div class="stat-box">
+                <div>Connected Proxies</div>
+                <div class="stat-value" id="total-proxies">-</div>
+            </div>
+            <div class="stat-box">
+                <div>Total Shares</div>
+                <div class="stat-value" id="total-shares">-</div>
+            </div>
+            <div class="stat-box">
+                <div>Total Quotes</div>
+                <div class="stat-value" id="total-quotes">-</div>
+            </div>
+            <div class="stat-box">
+                <div>Ehash Mined</div>
+                <div class="stat-value" id="ehash-mined">-</div>
+            </div>
+        </div>
+
+        <h2>Connected Proxies</h2>
+        <table class="proxies-table">
+            <thead>
+                <tr>
+                    <th class="proxies-icon-header"></th>
+                    <th>ID</th>
+                    <th>Address</th>
+                    <th class="template-provider-header">Template Provider</th>
+                    <th>Channels</th>
+                    <th>Shares</th>
+                    <th>Quotes</th>
+                    <th>Ehash</th>
+                    <th>Last Share</th>
+                </tr>
+            </thead>
+            <tbody id="proxies-tbody">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        function parseAddress(address) {
+            const parts = address.split(':');
+            if (parts.length === 2) {
+                return { ip: parts[0], port: parts[1] };
+            }
+            return { ip: address, port: '-' };
+        }
+
+        function getServiceMetadata(serviceType) {
+            // Service types come in format like "Pool", "JobDeclarator" or "Mint"
+            if (serviceType.includes('Pool')) {
+                return { label: 'Pool', iconClass: 'pickaxe-icon' };
+            }
+            if (serviceType.includes('JobDeclarator')) {
+                return { label: 'Job Declarator', iconClass: 'block-icon' };
+            }
+            if (serviceType.includes('Mint')) {
+                return { label: 'Mint', iconClass: 'coins-icon' };
+            }
+            return { label: serviceType, iconClass: null };
+        }
+
+        async function updateStats() {
+            try {
+                // Fetch services and connections from separate endpoints
+                const [servicesResponse, connectionsResponse] = await Promise.all([
+                    fetch('/api/services'),
+                    fetch('/api/connections')
+                ]);
+
+                const servicesData = await servicesResponse.json();
+                const connectionsData = await connectionsResponse.json();
+
+                const services = servicesData.services || [];
+                const proxies = connectionsData.proxies || [];
+
+                // Update stats
+                const totalShares = proxies.reduce((sum, p) => sum + p.shares_submitted, 0);
+                const totalQuotes = proxies.reduce((sum, p) => sum + p.quotes_created, 0);
+                const totalEhash = proxies.reduce((sum, p) => sum + p.ehash_mined, 0);
+
+                document.getElementById('total-proxies').textContent = proxies.length;
+                document.getElementById('total-shares').textContent = totalShares.toLocaleString();
+                document.getElementById('total-quotes').textContent = totalQuotes.toLocaleString();
+                document.getElementById('ehash-mined').textContent = totalEhash.toLocaleString() + ' ehash';
+
+                // Update services table
+                const servicesTbody = document.getElementById('services-tbody');
+                servicesTbody.innerHTML = '';
+
+                if (services.length === 0) {
+                    servicesTbody.innerHTML = '<tr><td colspan="5" style="text-align: center; opacity: 0.5;">No service connections</td></tr>';
+                } else {
+                    services.forEach(service => {
+                        const row = servicesTbody.insertRow();
+                        const serviceMeta = getServiceMetadata(service.service_type);
+                        const addr = parseAddress(service.address);
+
+                        const iconCell = row.insertCell();
+                        iconCell.className = 'service-icon-cell';
+                        iconCell.innerHTML = serviceMeta.iconClass
+                            ? `<span class="${serviceMeta.iconClass}" aria-hidden="true"></span>`
+                            : '';
+
+                        row.insertCell().textContent = serviceMeta.label;
+                        row.insertCell().innerHTML = `<span class="address">${addr.ip}</span>`;
+                        row.insertCell().textContent = addr.port;
+                        row.insertCell().innerHTML = `<span class="status-dot status-up"></span>Up`;
+                    });
+                }
+
+                // Update proxies table
+                const proxiesTbody = document.getElementById('proxies-tbody');
+                proxiesTbody.innerHTML = '';
+
+                if (proxies.length === 0) {
+                    proxiesTbody.innerHTML = '<tr><td colspan="9" style="text-align: center; opacity: 0.5;">No proxies connected</td></tr>';
+                } else {
+                    proxies.forEach(proxy => {
+                        console.log('Proxy:', proxy.id, 'work_selection:', proxy.work_selection, 'type:', typeof proxy.work_selection);
+                        const row = proxiesTbody.insertRow();
+
+                        // Icon column - show block icon if template provider, otherwise miner icon
+                        const iconCell = row.insertCell();
+                        iconCell.className = 'proxies-icon-cell';
+                        if (proxy.work_selection === true) {
+                            iconCell.innerHTML = '<span class="block-icon" aria-hidden="true"></span>';
+                        } else {
+                            iconCell.innerHTML = '<span class="miner-icon" aria-hidden="true"></span>';
+                        }
+
+                        row.insertCell().textContent = proxy.id;
+                        row.insertCell().innerHTML = `<span class="address">${proxy.address}</span>`;
+
+                        // Template Provider column - show Yes or No
+                        const templateCell = row.insertCell();
+                        templateCell.style.textAlign = 'center';
+                        templateCell.textContent = proxy.work_selection === true ? 'Yes' : 'No';
+
+                        row.insertCell().textContent = proxy.channels.length > 0 ? proxy.channels.join(', ') : 'None';
+                        row.insertCell().textContent = proxy.shares_submitted.toLocaleString();
+                        row.insertCell().textContent = proxy.quotes_created.toLocaleString();
+                        row.insertCell().textContent = proxy.ehash_mined.toLocaleString();
+                        row.insertCell().textContent = proxy.last_share_at || 'Never';
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to fetch stats:', error);
+            }
+        }
+
+        // Update immediately and then every 3 seconds
+        updateStats();
+        setInterval(updateStats, 3000);
+    </script>
+</body>
+</html>

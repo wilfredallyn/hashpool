@@ -3,6 +3,8 @@ resolver="2"
 
 members = [
     "pool",
+    "web-pool",
+    "web-proxy",
     "test-utils/mining-device",
     "test-utils/mining-device-sv1",
     "translator",
@@ -10,6 +12,10 @@ members = [
     "jd-server",
     "roles-utils/network-helpers",
     "roles-utils/stratum-translation",
+    "roles-utils/stats",
+    "roles-utils/config",
+    "roles-utils/config-helpers",
+    "roles-utils/rpc",
 ]
 
 [profile.dev]

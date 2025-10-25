@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Hashpool Pool Settings</title>
+    <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg">
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px;
+            text-align: center;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .nav {
+            margin-bottom: 30px;
+        }
+        .nav a {
+            color: #00ff00;
+            text-decoration: none;
+            margin: 0 20px;
+            font-size: 1.2em;
+            white-space: nowrap;
+            display: inline-block;
+        }
+        .nav a:hover {
+            text-shadow: 0 0 10px #00ff00;
+        }
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 40px;
+        }
+        .stat-box {
+            text-align: center;
+            padding: 20px;
+            border: 1px solid #00ff00;
+            min-width: 150px;
+        }
+        .stat-value {
+            font-size: 2em;
+            margin-top: 10px;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #00ff00;
+            display: inline-block;
+        }
+        .offline {
+            color: #ff4444;
+            border-color: #ff4444;
+        }
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-up {
+            background-color: #00ff00;
+            box-shadow: 0 0 5px #00ff00;
+        }
+        .status-down {
+            background-color: #ff4444;
+            box-shadow: 0 0 5px #ff4444;
+        }
+        /* {{NAV_ICON_CSS}} */
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="nav">
+            <a href="/"><span class="wallet-icon">Wallet</span></a> | <a href="/miners"><span class="pickaxe-icon">Miners</span></a> | <a href="/pool"><span class="miner-icon">Pool</span></a>
+        </div>
+
+        <h1>Mining Pool</h1>
+
+        <div style="margin: 30px 0; padding: 20px; border: 1px solid #00ff00; text-align: left;">
+            <h3 style="margin-top: 0; text-align: center;">Pool Settings</h3>
+            <div style="font-family: monospace; font-size: 1.1em;">
+                <div style="margin: 10px 0;"><strong>Pool:</strong> <span style="color: #ffff00;">Hashpool</span></div>
+                <div style="margin: 10px 0;"><strong>Server:</strong> <span style="color: #ffff00;">{upstream_address}</span></div>
+                <div style="margin: 10px 0;"><strong>Port:</strong> <span style="color: #ffff00;">{upstream_port}</span></div>
+                <div style="margin: 10px 0;"><strong>Protocol:</strong> <span style="color: #ffff00;">Stratum V2</span></div>
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-box">
+                <div>Blockchain</div>
+                <div class="stat-value" id="blockchain-status">-</div>
+            </div>
+            <div class="stat-box">
+                <div>Block Height</div>
+                <div class="stat-value" id="block-height-status">-</div>
+            </div>
+            <div class="stat-box">
+                <div>Last Block Found</div>
+                <div class="stat-value" id="last-block-status">-</div>
+            </div>
+        </div>
+
+        <div class="status" id="status">Connecting...</div>
+    </div>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const blockchainEl = document.getElementById('blockchain-status');
+        const blockHeightEl = document.getElementById('block-height-status');
+        const lastBlockEl = document.getElementById('last-block-status');
+
+        function updatePoolStatus() {
+            if (!statusEl) return;
+
+            fetch('/api/pool')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.connected) {
+                        statusEl.innerHTML = '<span class="status-dot status-up"></span>Connected';
+                        statusEl.className = 'status';
+                    } else {
+                        statusEl.innerHTML = '<span class="status-dot status-down"></span>Disconnected';
+                        statusEl.className = 'status offline';
+                    }
+
+                    // Update blockchain network from snapshot data
+                    if (blockchainEl && data.blockchain_network) {
+                        blockchainEl.textContent = data.blockchain_network;
+                    }
+
+                    // TODO: Update these with real data when available
+                    if (blockHeightEl) blockHeightEl.textContent = '-';
+                    if (lastBlockEl) lastBlockEl.textContent = '-';
+                })
+                .catch(e => {
+                    statusEl.innerHTML = '<span class="status-dot status-down"></span>Connection Lost';
+                    statusEl.className = 'status offline';
+
+                    if (blockchainEl) blockchainEl.textContent = '-';
+                    if (blockHeightEl) blockHeightEl.textContent = '-';
+                    if (lastBlockEl) lastBlockEl.textContent = '-';
+                });
+        }
+
+        // Update immediately and then at configured interval
+        updatePoolStatus();
+        setInterval(updatePoolStatus, {client_poll_interval_ms});
+    </script>
+</body>
+</html>

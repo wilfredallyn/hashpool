@@ -11,7 +11,8 @@ use mint_quote_sv2::CompressedPubKey;
 use ehash::calculate_ehash_amount;
 use mint_pool_messaging::{build_parsed_quote_request, MintPoolMessageHub, PendingQuoteContext};
 use shared_config::Sv2MessagingConfig;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
+use tracing::error as log_error;
 
 /// Error type for quote dispatcher operations
 #[derive(Debug, Error)]
@@ -117,7 +118,7 @@ impl QuoteDispatcher {
         // Spawn async task to dispatch via hub
         tokio::spawn(async move {
             if let Err(e) = hub.send_quote_request(parsed, context).await {
-                error!("Failed to dispatch mint quote request via hub: {}", e);
+                log_error!("Failed to dispatch mint quote request via hub: {}", e);
             } else {
                 info!(
                     "Queued mint quote request via hub: share_hash={}",
