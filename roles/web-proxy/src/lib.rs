@@ -58,6 +58,7 @@ mod tests {
             ehash_balance: 750,
             upstream_pool: None,
             downstream_miners: vec![],
+            blockchain_network: "testnet4".to_string(),
             timestamp: 123,
         };
 
@@ -89,6 +90,7 @@ mod tests {
             ehash_balance: 100,
             upstream_pool: None,
             downstream_miners: vec![],
+            blockchain_network: "testnet4".to_string(),
             timestamp: now,
         };
         storage.update(snapshot);
@@ -99,6 +101,7 @@ mod tests {
             ehash_balance: 100,
             upstream_pool: None,
             downstream_miners: vec![],
+            blockchain_network: "testnet4".to_string(),
             timestamp: now - 30,
         };
         storage.update(old_snapshot);

@@ -148,6 +148,7 @@ mod tests {
             ehash_balance: 500,
             upstream_pool: None,
             downstream_miners: vec![],
+            blockchain_network: "testnet4".to_string(),
             timestamp: 123456,
         };
         client.send_snapshot(snapshot).await.unwrap();
@@ -164,6 +165,7 @@ mod tests {
             ehash_balance: 100,
             upstream_pool: None,
             downstream_miners: vec![],
+            blockchain_network: "testnet4".to_string(),
             timestamp: 123,
         };
         let result = client.send_snapshot(snapshot).await;
