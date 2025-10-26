@@ -1,0 +1,7 @@
+[package]
+name = "pool-messages"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+roles_logic_sv2 = { path = "../../../protocols/v2/roles-logic-sv2" }

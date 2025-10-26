@@ -58,6 +58,7 @@ use mining_sv2::{
     SetCustomMiningJobSuccess, SetExtranoncePrefix, SetGroupChannel,
     SetNewPrevHash as MiningSetNewPrevHash, SetTarget, SubmitSharesError, SubmitSharesExtended,
     SubmitSharesStandard, SubmitSharesSuccess, UpdateChannel, UpdateChannelError,
+    MintQuoteNotification, MintQuoteFailure,
 };
 use template_distribution_sv2::{
     CoinbaseOutputConstraints, NewTemplate, RequestTransactionData, RequestTransactionDataError,
@@ -115,6 +116,10 @@ pub fn message_type_to_name(msg_type: u8) -> &'static str {
         0x74 => "RequestTransactionDataSuccess",
         0x75 => "RequestTransactionDataError",
         0x76 => "SubmitSolution",
+
+        // Extension messages (0xC0-0xCF) - vendor range
+        0xC0 => "MintQuoteNotification",
+        0xC1 => "MintQuoteFailure",
 
         // Unknown message type
         _ => "Unknown Message",
@@ -269,6 +274,12 @@ pub enum Mining<'a> {
     SubmitSharesSuccess(SubmitSharesSuccess),
     UpdateChannel(UpdateChannel<'a>),
     UpdateChannelError(UpdateChannelError<'a>),
+    /// Extension message: Notification of a paid quote
+    #[cfg_attr(feature = "with_serde", serde(borrow))]
+    MintQuoteNotification(MintQuoteNotification<'a>),
+    /// Extension message: Notification of a failed quote
+    #[cfg_attr(feature = "with_serde", serde(borrow))]
+    MintQuoteFailure(MintQuoteFailure<'a>),
 }
 
 impl fmt::Display for Mining<'_> {
@@ -295,6 +306,8 @@ impl fmt::Display for Mining<'_> {
             Mining::SubmitSharesSuccess(m) => write!(f, "{m}"),
             Mining::UpdateChannel(m) => write!(f, "{m}"),
             Mining::UpdateChannelError(m) => write!(f, "{m}"),
+            Mining::MintQuoteNotification(m) => write!(f, "MintQuoteNotification: {m:?}"),
+            Mining::MintQuoteFailure(m) => write!(f, "MintQuoteFailure: {m:?}"),
         }
     }
 }
@@ -334,6 +347,8 @@ impl Mining<'_> {
             Mining::SubmitSharesSuccess(m) => Mining::SubmitSharesSuccess(m),
             Mining::UpdateChannel(m) => Mining::UpdateChannel(m.into_static()),
             Mining::UpdateChannelError(m) => Mining::UpdateChannelError(m.into_static()),
+            Mining::MintQuoteNotification(m) => Mining::MintQuoteNotification(m.into_static()),
+            Mining::MintQuoteFailure(m) => Mining::MintQuoteFailure(m.into_static()),
         }
     }
 }
@@ -541,6 +556,8 @@ impl IsSv2Message for Mining<'_> {
             Self::SubmitSharesSuccess(_) => MESSAGE_TYPE_SUBMIT_SHARES_SUCCESS,
             Self::UpdateChannel(_) => MESSAGE_TYPE_UPDATE_CHANNEL,
             Self::UpdateChannelError(_) => MESSAGE_TYPE_UPDATE_CHANNEL_ERROR,
+            Self::MintQuoteNotification(_) => MESSAGE_TYPE_MINT_QUOTE_NOTIFICATION,
+            Self::MintQuoteFailure(_) => MESSAGE_TYPE_MINT_QUOTE_FAILURE,
         }
     }
 
@@ -571,6 +588,8 @@ impl IsSv2Message for Mining<'_> {
             Self::SubmitSharesSuccess(_) => CHANNEL_BIT_SUBMIT_SHARES_SUCCESS,
             Self::UpdateChannel(_) => CHANNEL_BIT_UPDATE_CHANNEL,
             Self::UpdateChannelError(_) => CHANNEL_BIT_UPDATE_CHANNEL_ERROR,
+            Self::MintQuoteNotification(_) => CHANNEL_BIT_MINT_QUOTE_NOTIFICATION,
+            Self::MintQuoteFailure(_) => CHANNEL_BIT_MINT_QUOTE_FAILURE,
         }
     }
 }
@@ -638,6 +657,8 @@ impl<'decoder> From<Mining<'decoder>> for EncodableField<'decoder> {
             Mining::SubmitSharesSuccess(a) => a.into(),
             Mining::UpdateChannel(a) => a.into(),
             Mining::UpdateChannelError(a) => a.into(),
+            Mining::MintQuoteNotification(a) => a.into(),
+            Mining::MintQuoteFailure(a) => a.into(),
         }
     }
 }
@@ -704,6 +725,8 @@ impl GetSize for Mining<'_> {
             Mining::SubmitSharesSuccess(a) => a.get_size(),
             Mining::UpdateChannel(a) => a.get_size(),
             Mining::UpdateChannelError(a) => a.get_size(),
+            Mining::MintQuoteNotification(a) => a.get_size(),
+            Mining::MintQuoteFailure(a) => a.get_size(),
         }
     }
 }

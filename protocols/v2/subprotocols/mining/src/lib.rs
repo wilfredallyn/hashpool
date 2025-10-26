@@ -43,6 +43,7 @@ mod set_new_prev_hash;
 mod set_target;
 mod submit_shares;
 mod update_channel;
+mod mint_quote_notification;
 
 pub use close_channel::CloseChannel;
 use core::ops::Range;
@@ -62,6 +63,7 @@ pub use submit_shares::{
     SubmitSharesError, SubmitSharesExtended, SubmitSharesStandard, SubmitSharesSuccess,
 };
 pub use update_channel::{UpdateChannel, UpdateChannelError};
+pub use mint_quote_notification::{MintQuoteNotification, MintQuoteFailure};
 
 // Mining Protocol message types.
 pub const MESSAGE_TYPE_OPEN_STANDARD_MINING_CHANNEL: u8 = 0x10;
@@ -86,6 +88,10 @@ pub const MESSAGE_TYPE_SET_CUSTOM_MINING_JOB_SUCCESS: u8 = 0x23;
 pub const MESSAGE_TYPE_SET_CUSTOM_MINING_JOB_ERROR: u8 = 0x24;
 pub const MESSAGE_TYPE_SET_GROUP_CHANNEL: u8 = 0x25;
 
+// Extension messages (vendor range 0xC0-0xFF)
+pub const MESSAGE_TYPE_MINT_QUOTE_NOTIFICATION: u8 = 0xC0;
+pub const MESSAGE_TYPE_MINT_QUOTE_FAILURE: u8 = 0xC1;
+
 // Channel bits in the Mining protocol vary depending on the message.
 pub const CHANNEL_BIT_CLOSE_CHANNEL: bool = true;
 pub const CHANNEL_BIT_NEW_EXTENDED_MINING_JOB: bool = true;
@@ -109,6 +115,10 @@ pub const CHANNEL_BIT_SUBMIT_SHARES_STANDARD: bool = true;
 pub const CHANNEL_BIT_SUBMIT_SHARES_SUCCESS: bool = true;
 pub const CHANNEL_BIT_UPDATE_CHANNEL: bool = true;
 pub const CHANNEL_BIT_UPDATE_CHANNEL_ERROR: bool = true;
+
+// Extension message channel bits
+pub const CHANNEL_BIT_MINT_QUOTE_NOTIFICATION: bool = true;
+pub const CHANNEL_BIT_MINT_QUOTE_FAILURE: bool = true;
 
 pub const MAX_EXTRANONCE_LEN: usize = 32;
 

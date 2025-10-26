@@ -1,5 +1,11 @@
 # **MINT SERVICE INTEGRATION PLAN FOR SRI 1.5.0**
 
+## **Implementation Status**
+
+- ✅ **PHASE 1**: Add PoolMessages & MintQuoteNotification - **COMPLETED**
+- ⏳ **PHASE 2**: Proper Noise Handshake - *In Progress*
+- ⏳ **PHASE 3**: Quote Request/Response Flow - *Pending*
+
 ## **Overview**
 
 This document describes the three-phase plan to get the mint service running with proper SV2 Noise encryption and end-to-end ehash token issuance on SRI 1.5.0.
@@ -228,13 +234,22 @@ use pool_messages::PoolMessages;
 use pool_messages::{PoolMessages, Minting};
 ```
 
-### **Validation**
+### **Validation - COMPLETED**
 
 After Phase 1:
 - ✅ `cd protocols && cargo build` succeeds
 - ✅ `cd roles && cargo build` succeeds (mint imports resolve)
 - ✅ `MintQuoteNotification` and `MintQuoteFailure` are available in Mining enum
 - ✅ Pool can send extension messages (infrastructure in place)
+
+**Phase 1 Completion Date**: 2025-10-26
+
+**Files Modified**:
+1. `protocols/v2/subprotocols/mining/src/mint_quote_notification.rs` (NEW)
+2. `protocols/v2/subprotocols/mining/src/lib.rs` (added constants and exports)
+3. `protocols/v2/parsers-sv2/src/lib.rs` (added Mining enum variants and trait impl arms)
+4. `roles/roles-utils/pool-messages/` (created adapter crate - commented out pending Phase 2)
+5. `roles/Cargo.toml` (added/commented pool-messages member)
 
 ---
 
