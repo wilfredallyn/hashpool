@@ -1,0 +1,32 @@
+# SRI Pool config
+authority_public_key = "9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72"
+authority_secret_key = "mkDLTBBRxdBv998612qipDYoTK3YUrqLe8uWw7gu3iXbSrn2n"
+cert_validity_sec = 3600
+test_only_listen_adress_plain =  "0.0.0.0:34250"
+listen_address = "0.0.0.0:34254"
+
+# Coinbase reward script (specified as a descriptor)
+# For more info on descriptors see: https://github.com/bitcoin/bips/blob/master/bip-0380.mediawiki#appendix-b-index-of-script-expressions
+coinbase_reward_script = "addr(tb1qa0sm0hxzj0x25rh8gw5xlzwlsfvvyz8u96w3p8)"
+
+# Pool signature (string to be included in coinbase tx)
+pool_signature = "Stratum v2 SRI Pool"
+
+# Template Provider config
+# Local TP (this is pointing to localhost so you must run a TP locally for this configuration to work)
+tp_address = "127.0.0.1:8442"
+
+# Target number of shares per minute from miners
+shares_per_minute = 1.0
+
+# Share batch size
+share_batch_size = 10
+
+# Server ID (number to guarantee unique search space allocation across different Pool servers)
+server_id = 1
+
+# Stats server config (TCP address for stats-pool)
+stats_server_address = "127.0.0.1:9083"
+
+# Job Declarator Server address (for display purposes)
+jd_server_address = "127.0.0.1:34264"

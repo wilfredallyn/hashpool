@@ -19,13 +19,9 @@ pub fn format_hash_units(value: u64) -> String {
     for &(threshold, unit_name, divisor) in UNITS {
         if value >= threshold {
             let divided = value as f64 / divisor;
-            // Format with 2 decimal places, remove trailing .00
+            // Format with 2 decimal places, then trim trailing zeros
             let formatted = format!("{:.2}", divided);
-            let trimmed = if formatted.ends_with(".00") {
-                &formatted[..formatted.len() - 3]
-            } else {
-                &formatted
-            };
+            let trimmed = formatted.trim_end_matches('0').trim_end_matches('.');
             return format!("{} {}", trimmed, unit_name);
         }
     }

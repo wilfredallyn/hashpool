@@ -5,7 +5,7 @@ use codec_sv2::{StandardEitherFrame, StandardSv2Frame};
 use const_sv2::MESSAGE_TYPE_MINT_QUOTE_REQUEST;
 use mint_pool_messaging::{mint_quote_response_from_cdk, parse_mint_quote_request};
 use mint_quote_sv2::MintQuoteResponse;
-use roles_logic_sv2::parsers::PoolMessages;
+use roles_logic_sv2::parsers_sv2::PoolMessages;
 use std::sync::Arc;
 use tracing::info;
 
@@ -78,7 +78,7 @@ async fn send_quote_response_to_pool(
     );
 
     // Create pool message for the response
-    let pool_message = PoolMessages::Minting(roles_logic_sv2::parsers::Minting::MintQuoteResponse(
+    let pool_message = PoolMessages::Minting(roles_logic_sv2::parsers_sv2::Minting::MintQuoteResponse(
         response,
     ));
 
@@ -117,7 +117,7 @@ async fn send_quote_error_to_pool(
     };
 
     // Create pool message
-    let pool_message = PoolMessages::Minting(roles_logic_sv2::parsers::Minting::MintQuoteError(
+    let pool_message = PoolMessages::Minting(roles_logic_sv2::parsers_sv2::Minting::MintQuoteError(
         error_response,
     ));
 

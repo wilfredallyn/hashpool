@@ -49,6 +49,7 @@ pub fn process_cli_args() -> Result<JobDeclaratorServerConfig, JdsError> {
         .add_source(File::new(config_path, FileFormat::Toml))
         .build()
         .map_err(|e| {
+            eprintln!("Failed to build config: {}", e);
             error!("Failed to build config: {}", e);
             JdsError::BadCliArgs
         })?;
@@ -57,6 +58,7 @@ pub fn process_cli_args() -> Result<JobDeclaratorServerConfig, JdsError> {
     let mut config = settings
         .try_deserialize::<JobDeclaratorServerConfig>()
         .map_err(|e| {
+            eprintln!("Failed to deserialize config: {}", e);
             error!("Failed to deserialize config: {}", e);
             JdsError::BadCliArgs
         })?;

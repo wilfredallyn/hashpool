@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use cdk::mint::Mint;
-use roles_logic_sv2::parsers::PoolMessages;
+use roles_logic_sv2::parsers_sv2::PoolMessages;
 use codec_sv2::StandardEitherFrame;
 use mint_pool_messaging::MessageType;
 use tracing::info;

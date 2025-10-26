@@ -3,19 +3,26 @@ resolver="2"
 
 members = [
     "pool",
-    "web-pool",
+    "stats-pool",
+    "stats-proxy",
     "web-proxy",
+    "web-pool",
     "test-utils/mining-device",
     "test-utils/mining-device-sv1",
     "translator",
     "jd-client",
     "jd-server",
+    "roles-utils/mint-pool-messaging",
+    "roles-utils/web-assets",
+    "roles-utils/stats",
     "roles-utils/network-helpers",
     "roles-utils/stratum-translation",
-    "roles-utils/stats",
     "roles-utils/config",
     "roles-utils/config-helpers",
     "roles-utils/rpc",
+    # "mint",  # TODO: Phase 3 - requires SRI spec update for PoolMessages and plain_connection_tokio APIs
+    # "roles-utils/quote-dispatcher",  # TODO: Phase 3 - requires mint phase to be completed
+    # "tests-integration",  # TODO: Deferred - requires jd-client and mining-proxy ports
 ]
 
 [profile.dev]

@@ -2,6 +2,53 @@
 
 Issues and improvements deferred during development to maintain focus on core functionality.
 
+## Blocked / Cannot Proceed
+
+### Mint Service Missing SRI Spec APIs
+
+**Status:** Cannot compile - blocked by SRI specification gaps
+**Priority:** Critical - Blocking Phase 3 completion
+
+**Current Issue:**
+Mint service fails to compile with 5 errors:
+1. Missing `plain_connection_tokio` module in `network_helpers_sv2`
+2. Missing `PoolMessages` enum in `roles_logic_sv2::parsers_sv2`
+3. Missing `Minting` variant in `parsers_sv2`
+
+**Error Details:**
+```
+error[E0432]: unresolved import `network_helpers_sv2::plain_connection_tokio::PlainConnection`
+error[E0432]: unresolved import `roles_logic_sv2::parsers_sv2::PoolMessages`
+error[E0433]: failed to resolve: could not find `Minting` in `parsers_sv2`
+```
+
+**Locations:**
+- `roles/mint/src/lib/sv2_connection/connection.rs:5` - PlainConnection import
+- `roles/mint/src/lib/sv2_connection/message_handler.rs:3` - PoolMessages import
+- `roles/mint/src/lib/sv2_connection/quote_processing.rs:8,81,120` - PoolMessages and Minting
+
+**Why This Blocks Development:**
+The SRI 1.5.0 specification doesn't yet include:
+- Plain TCP connection APIs for non-Noise connections (needed for quote protocol)
+- Pool-level messages for quote handling (Mint-specific extensions)
+- Message variants for Mint Quote request/response
+
+**What Needs To Happen:**
+1. SRI specification must be updated to include PoolMessages and plain_connection_tokio APIs
+2. Stratum V2 spec must clarify Mint Quote protocol message flow
+3. Once spec APIs are available, uncomment "mint" in roles/Cargo.toml
+4. Fix mint/src/lib/sv2_connection imports to use proper APIs
+
+**Current Workaround:**
+- Mint is commented out in `roles/Cargo.toml` workspace members
+- Mint process is disabled in `devenv.nix`
+- Mint config files exist but cannot be used
+
+**Owner:**
+SRI (Stratum V2 Reference Implementation) maintainers - awaiting spec updates
+
+---
+
 ## High Priority
 
 ### Mint SV2 Connection Not Using Proper Protocol
@@ -38,27 +85,58 @@ The mint service connects to the pool using `PlainConnection` which:
 
 ## Medium Priority
 
-### Dashboard Connection Type Heuristics
+### Web-Proxy Tightly Coupled To Translator Proxy Config
 
-**Status:** Using activity-based detection as workaround
-**Priority:** Medium - User Experience
+**Status:** Working but architecturally problematic
+**Priority:** Medium - Configuration Management
 
-**Current Issue:**
-Connection type identification uses heuristics in `pool-stats/src/web.rs:142-154`:
-- If has shares/channels → "Translator"
-- Else if work_selection flag → "Job Declarator"
-- Else if quotes → "Mint"
+**Current Problem:**
+`roles/web-proxy/src/config.rs` loads the entire **translator proxy configuration file** (`tproxy.config.toml`) just to extract 4 fields:
+- `downstream_address`
+- `downstream_port`
+- `upstream_address`
+- `upstream_port`
 
-**Problem:**
-- Relies on activity patterns rather than proper metadata
-- The mint workaround (using port as ID) is hacky
-- Can misidentify services before they've done any work
+**Why This Sucks:**
+1. **Tight coupling** - Web-proxy is now dependent on translator config schema
+2. **Schema pollution** - tproxy.config.toml must include fields meant for web-proxy display
+3. **Deployment fragility** - Changing translator config can break web-proxy even if unrelated
+4. **Conceptual confusion** - Web-proxy shouldn't care about translator internals
+5. **Shared config duplication** - These values should come from shared config, not translator-specific config
 
-**Better Solution:**
-Once mint uses proper SV2 connection:
-1. Add a `connection_type` field to `SetupConnection` or use dedicated message
-2. Or use proper protocol discrimination (Mining Protocol vs Job Declaration Protocol)
-3. Store connection type explicitly in database from handshake
+**Location:**
+- `roles/web-proxy/src/config.rs:119-128` - Loads tproxy config
+- `config/tproxy.config.toml:29-30` - Has flat `upstream_address/upstream_port` fields just for web-proxy
+
+**What Needs To Happen:**
+1. Move network topology config (downstream/upstream addresses and ports) to shared config
+   - Add to `config/shared/miner.toml` or `config/shared/pool.toml`
+   - Or create `config/shared/network.toml`
+2. Create a shim/adapter in translator config to read from shared config if needed
+   - This maintains SRI config compatibility without duplication
+3. Update web-proxy to read from shared config instead of tproxy.config.toml
+4. Consider: Should `stats_proxy_url` also come from shared config?
+
+**Recommended Structure:**
+```toml
+# config/shared/network.toml
+[proxy]
+downstream_address = "0.0.0.0"
+downstream_port = 34255
+upstream_address = "127.0.0.1"
+upstream_port = 34254
+```
+
+**Then in translator and web-proxy:**
+```rust
+// Both read from shared config
+let network_config = load_shared_config("network.toml")?;
+```
+
+**Impact on SRI:**
+- Keep SRI configs as-is for backward compatibility
+- The shared config would be a new layer that doesn't break existing SRI structure
+- Can be gradual migration (Phase 4 or later)
 
 ---
 
@@ -164,8 +242,3 @@ The mint connection doesn't go through the normal downstream ID allocation becau
 - Test what happens when mint and JD both connect simultaneously
 - Load testing with multiple mints
 
----
-
-## Notes
-
-These issues were discovered during the Phase 3 stats refactor but deferred to avoid scope creep. The mint connection issue is the most critical and should be addressed before production deployment.

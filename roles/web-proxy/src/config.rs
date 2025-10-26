@@ -176,6 +176,7 @@ impl Config {
             .and_then(|i| i.as_integer())
             .unwrap_or(3) as u64;
 
+
         Ok(Config {
             stats_proxy_url,
             web_server_address,

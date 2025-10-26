@@ -19,6 +19,12 @@ pub struct Args {
     )]
     pub config_path: PathBuf,
     #[arg(
+        short = 'g',
+        long = "global-config",
+        help = "Path to the global shared configuration file (optional)"
+    )]
+    pub global_config_path: Option<PathBuf>,
+    #[arg(
         short = 'f',
         long = "log-file",
         help = "Path to the log file. If not set, logs will only be written to stdout."

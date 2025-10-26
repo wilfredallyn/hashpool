@@ -19,10 +19,16 @@ async fn main() {
     let config = match process_cli_args() {
         Ok(cfg) => cfg,
         Err(e) => {
-            error!("Failed to process CLI arguments: {}", e);
+            eprintln!("Failed to process CLI arguments: {:?}", e);
             return;
         }
     };
     init_logging(config.log_file());
-    let _ = JobDeclaratorServer::new(config).start().await;
+    match JobDeclaratorServer::new(config).start().await {
+        Ok(_) => {},
+        Err(e) => {
+            error!("Job Declarator Server error: {:?}", e);
+            eprintln!("Job Declarator Server error: {:?}", e);
+        }
+    }
 }

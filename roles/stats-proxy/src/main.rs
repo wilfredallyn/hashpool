@@ -4,12 +4,10 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::io::AsyncReadExt;
 use tracing::{error, info};
 
-mod config;
-mod api;
-
-use config::Config;
+use stats_proxy::config::Config;
 use stats_proxy::db::StatsData;
 use stats_proxy::stats_handler::StatsHandler;
+use stats_proxy::api;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
