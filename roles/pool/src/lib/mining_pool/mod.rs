@@ -79,6 +79,9 @@ pub mod message_handler;
 // Module for mint service integration (quote dispatching and channel tracking)
 pub mod mint_integration;
 
+// Module for mint service connection management (Noise handshake)
+pub mod mint_connection;
+
 /// Represents a generic SV2 message with a static lifetime.
 pub type Message = AnyMessage<'static>;
 /// A standard SV2 frame containing a message.
@@ -186,6 +189,9 @@ pub struct Pool {
     pool_tag_string: String,
     // Manager for mint service integration (channel tracking, quote dispatching)
     pub mint_manager: Arc<mint_integration::MintIntegrationManager>,
+    // Connection to mint service for Noise-encrypted communication
+    // Phase 2: Manages the TCP/Noise connection with the mint service
+    pub mint_connection: Option<Arc<tokio::sync::Mutex<mint_connection::MintConnection>>>,
 }
 
 impl Downstream {
@@ -1085,6 +1091,7 @@ impl Pool {
             last_new_prev_hash: None,
             pool_tag_string: config.pool_signature().clone(),
             mint_manager,
+            mint_connection: None,  // Phase 2: Will be established when mint service connects
         }));
 
         let cloned = pool.clone();

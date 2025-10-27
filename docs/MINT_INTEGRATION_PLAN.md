@@ -2,8 +2,8 @@
 
 ## **Implementation Status**
 
-- ✅ **PHASE 1**: Add PoolMessages & MintQuoteNotification - **COMPLETED**
-- ⏳ **PHASE 2**: Proper Noise Handshake - *In Progress*
+- ✅ **PHASE 1**: Add PoolMessages & MintQuoteNotification - **COMPLETED (Oct 26)**
+- 🚧 **PHASE 2**: Proper Noise Handshake - **IN PROGRESS (Pool responder ✅, Mint initiator ⏳)**
 - ⏳ **PHASE 3**: Quote Request/Response Flow - *Pending*
 
 ## **Overview**

@@ -122,11 +122,23 @@ impl MintIntegrationManager {
     }
 
     /// Start the mint integration service
+    ///
+    /// Phase 2: This method will be enhanced to establish a Noise-encrypted
+    /// TCP connection to the mint service. For now, it logs the startup and
+    /// awaits the connection mechanism implementation.
     pub async fn start(
         &self,
         quote_receiver: Receiver<ShareQuoteRequest>,
     ) {
-        info!("Mint integration manager started, connecting to: {}", self.mint_address);
+        info!("🚀 Mint integration manager started");
+        info!("📍 Configured mint address: {}", self.mint_address);
+        info!("⏳ Phase 2: Awaiting Noise-encrypted TCP connection to mint service...");
+
+        // TODO Phase 2: Establish Noise-encrypted connection with:
+        // 1. TCP listener on mint_address
+        // 2. Noise handshake as responder
+        // 3. SV2 SetupConnection exchange
+        // 4. Connection lifecycle management
 
         // Main loop: receive quote requests and process them
         while let Ok(quote_request) = quote_receiver.recv().await {
@@ -135,7 +147,7 @@ impl MintIntegrationManager {
             }
         }
 
-        info!("Mint integration manager shutting down");
+        info!("🛑 Mint integration manager shutting down");
     }
 }
 
