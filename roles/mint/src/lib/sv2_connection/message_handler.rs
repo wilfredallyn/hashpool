@@ -52,20 +52,29 @@ async fn process_sv2_message(
     sender: &async_channel::Sender<StandardEitherFrame<PoolMessages<'static>>>,
 ) -> Result<()> {
     tracing::debug!("Received SV2 frame");
-    
+
     let message_type = incoming
         .get_header()
         .ok_or_else(|| anyhow::anyhow!("No header set"))?
         .msg_type();
     let payload = incoming.payload();
-    
+
     tracing::debug!("Received message type: 0x{:02x}, payload length: {} bytes", message_type, payload.len());
-    
-    if MessageType::is_mint_quote_message(message_type) {
-        process_mint_quote_message(mint.clone(), message_type, payload, sender).await
-    } else {
-        tracing::warn!("Received non-mint-quote message type: 0x{:02x}", message_type);
-        Ok(())
+
+    match message_type {
+        // Setup responses (handled during connection, log if received again)
+        0x00 | 0x01 => {
+            tracing::debug!("Received setup response during connection");
+            Ok(())
+        },
+        // Mint quote messages (0x80-0x82)
+        0x80..=0x82 => {
+            process_mint_quote_message(mint.clone(), message_type, payload, sender).await
+        },
+        _ => {
+            tracing::warn!("Received unsupported message type: 0x{:02x}", message_type);
+            Ok(())
+        }
     }
 }
 

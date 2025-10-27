@@ -4,8 +4,6 @@
 //! between mining pools and mint services using SV2 messages over MPSC channels.
 
 use std::sync::Arc;
-
-use mint_quote_sv2::CompressedPubKey;
 use std::convert::TryFrom;
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -94,7 +92,7 @@ fn map_share_hash_error(err: ShareHashError) -> QuoteBuildError {
 pub fn build_parsed_quote_request(
     amount: u64,
     header_hash: &[u8],
-    locking_key: CompressedPubKey<'static>,
+    locking_key: mint_quote_sv2::CompressedPubKey<'static>,
 ) -> Result<ParsedMintQuoteRequest, QuoteBuildError> {
     let share_hash = ShareHash::try_from(header_hash).map_err(map_share_hash_error)?;
     let request = build_mint_quote_request(amount, share_hash.as_bytes(), locking_key)?;
