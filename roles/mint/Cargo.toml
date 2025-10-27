@@ -37,5 +37,6 @@ mining_sv2 = { path = "../../protocols/v2/subprotocols/mining" }
 binary_sv2 = { path = "../../protocols/v2/binary-sv2" }
 mint_quote_sv2 = { path = "../../protocols/v2/subprotocols/mint-quote" }
 const_sv2 = { path = "../../protocols/v2/const-sv2" }
+common_messages_sv2 = { path = "../../protocols/v2/subprotocols/common-messages" }
 ehash = { path = "../../protocols/ehash" }
 async-channel = "1.8.0"

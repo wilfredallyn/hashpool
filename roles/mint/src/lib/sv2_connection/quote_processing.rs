@@ -1,20 +1,24 @@
 use anyhow::Result;
-use binary_sv2::Str0255;
 use cdk::mint::Mint;
-use codec_sv2::{StandardEitherFrame, StandardSv2Frame};
+use codec_sv2::StandardEitherFrame;
 use const_sv2::MESSAGE_TYPE_MINT_QUOTE_REQUEST;
 use mint_pool_messaging::{mint_quote_response_from_cdk, parse_mint_quote_request};
 use mint_quote_sv2::MintQuoteResponse;
-use roles_logic_sv2::parsers_sv2::PoolMessages;
 use std::sync::Arc;
 use tracing::info;
+
+use super::frame_codec;
+use codec_sv2::{StandardSv2Frame};
+
+/// Type alias for frames used in mint/pool communication
+type MintFrame = StandardEitherFrame<Vec<u8>>;
 
 /// Process mint quote messages
 pub async fn process_mint_quote_message(
     mint: Arc<Mint>,
     message_type: u8,
     payload: &[u8],
-    sender: &async_channel::Sender<StandardEitherFrame<PoolMessages<'static>>>,
+    sender: &async_channel::Sender<MintFrame>,
 ) -> Result<()> {
     info!("Received mint quote message - processing with mint");
 
@@ -67,71 +71,59 @@ pub async fn process_mint_quote_message(
 /// Send MintQuoteResponse back to pool via TCP connection
 async fn send_quote_response_to_pool(
     response: MintQuoteResponse<'static>,
-    sender: &async_channel::Sender<StandardEitherFrame<PoolMessages<'static>>>,
+    sender: &async_channel::Sender<MintFrame>,
 ) -> Result<()> {
     let quote_id_str =
         std::str::from_utf8(response.quote_id.inner_as_ref()).unwrap_or("invalid_utf8");
 
     info!(
-        "🚀 Sending mint quote response via TCP connection: quote_id={}",
+        "🚀 Sending quote response: quote_id={}",
         quote_id_str
     );
 
-    // Create pool message for the response
-    let pool_message = PoolMessages::Minting(roles_logic_sv2::parsers_sv2::Minting::MintQuoteResponse(
-        response,
-    ));
+    // Encode MintQuoteResponse using binary_sv2 codec serialization
+    // The response is serialized to bytes using the Encodable trait,
+    // with message type byte (0x81) prepended for frame identification
+    let frame_bytes = frame_codec::encode_mint_quote_response(&response)?;
 
-    // Convert to SV2 frame and send via TCP
-    let sv2_frame: StandardSv2Frame<PoolMessages> = pool_message
-        .try_into()
-        .map_err(|e| anyhow::anyhow!("Failed to create SV2 frame: {:?}", e))?;
+    // Create Sv2Frame from encoded bytes and wrap in StandardEitherFrame for transmission
+    let sv2_frame = StandardSv2Frame::from_bytes_unchecked(frame_bytes.into());
+    let frame = StandardEitherFrame::Sv2(sv2_frame);
 
-    let either_frame = sv2_frame.into();
-    sender
-        .send(either_frame)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to send quote response: {}", e))?;
+    sender.send(frame).await
+        .map_err(|e| anyhow::anyhow!("Failed to send quote response frame: {}", e))?;
 
-    info!("✅ Successfully sent mint quote response to pool via TCP");
+    info!("✅ Quote response sent (quote_id={})", quote_id_str);
     Ok(())
 }
 
-/// Send MintQuoteError back to pool  
+/// Send MintQuoteError back to pool
 async fn send_quote_error_to_pool(
     error_message: String,
-    sender: &async_channel::Sender<StandardEitherFrame<PoolMessages<'static>>>,
+    sender: &async_channel::Sender<MintFrame>,
 ) -> Result<()> {
-    use mint_quote_sv2::MintQuoteError;
-
     // Create error code (generic error = 1)
     let error_code = 1u32;
 
-    // Create error message
-    let error_msg = Str0255::try_from(error_message)
-        .map_err(|e| anyhow::anyhow!("Error message too long: {:?}", e))?;
+    info!(
+        "⚠️  Sending error response: code={}, message={}",
+        error_code, error_message
+    );
 
-    let error_response = MintQuoteError {
+    // Use frame codec to encode error response
+    let frame_bytes = frame_codec::encode_mint_quote_error(error_code, &error_message)?;
+
+    // Create Sv2Frame from encoded bytes and wrap in StandardEitherFrame for transmission
+    let sv2_frame = StandardSv2Frame::from_bytes_unchecked(frame_bytes.into());
+    let frame = StandardEitherFrame::Sv2(sv2_frame);
+
+    sender.send(frame).await
+        .map_err(|e| anyhow::anyhow!("Failed to send error frame: {}", e))?;
+
+    info!(
+        "✅ Quote error sent (code={}, message={})",
         error_code,
-        error_message: error_msg,
-    };
-
-    // Create pool message
-    let pool_message = PoolMessages::Minting(roles_logic_sv2::parsers_sv2::Minting::MintQuoteError(
-        error_response,
-    ));
-
-    // Convert to SV2 frame and send
-    let sv2_frame: StandardSv2Frame<PoolMessages> = pool_message
-        .try_into()
-        .map_err(|e| anyhow::anyhow!("Failed to create SV2 frame: {:?}", e))?;
-
-    let either_frame = sv2_frame.into();
-    sender
-        .send(either_frame)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to send quote error: {}", e))?;
-
-    info!("Successfully sent mint quote error to pool");
+        error_message
+    );
     Ok(())
 }

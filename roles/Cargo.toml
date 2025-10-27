@@ -21,7 +21,7 @@ members = [
     "roles-utils/config",
     "roles-utils/config-helpers",
     "roles-utils/rpc",
-    # "mint",  # TODO: Phase 3 - requires SRI spec update for PoolMessages and plain_connection_tokio APIs
+    "mint",
     # "roles-utils/quote-dispatcher",  # TODO: Phase 3 - requires mint phase to be completed
     # "tests-integration",  # TODO: Deferred - requires jd-client and mining-proxy ports
 ]

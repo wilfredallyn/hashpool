@@ -7,7 +7,7 @@ use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 use shared_config::PoolGlobalConfig;
-use std::{fs, sync::Arc};
+use std::fs;
 use serde::{Deserialize, Serialize};
 
 /// Extended config for hashpool-specific mint settings
