@@ -46,8 +46,29 @@ pub struct MintConnection {
 }
 
 impl MintConnection {
-    /// Create a new mint connection instance with authentication keys
-    pub fn new(
+    /// Create a new mint connection instance with default authentication keys
+    pub fn new(address: SocketAddr) -> Self {
+        // Use default keys for basic connectivity
+        // Phase 3: These should be loaded from pool config
+        use secp256k1::rand::thread_rng;
+
+        let secret_key = secp256k1::SecretKey::new(&mut thread_rng());
+        let authority_secret_key = Secp256k1SecretKey(secret_key);
+        let authority_public_key = Secp256k1PublicKey::from(authority_secret_key);
+
+        Self {
+            address,
+            authority_secret_key,
+            authority_public_key,
+            cert_validity_duration: Duration::from_secs(3600), // 1 hour default
+            receiver: None,
+            sender: None,
+            is_connected: Arc::new(RwLock::new(false)),
+        }
+    }
+
+    /// Create a new mint connection instance with specified authentication keys
+    pub fn with_keys(
         address: SocketAddr,
         authority_secret_key: Secp256k1SecretKey,
         authority_public_key: Secp256k1PublicKey,
@@ -143,10 +164,11 @@ impl MintConnection {
         .map_err(|e| format!("Connection failed: {:?}", e))?;
 
         debug!("Noise handshake completed");
+        info!("✅ SV2 Noise handshake successful");
 
-        // TODO Phase 3: Send SetupConnectionSuccess with SV2 protocol
-        // TODO Phase 3: Implement message routing for MintQuoteNotifications
-        // The receiver and sender will be used in Phase 3 for message exchange
+        // Phase 3: Receiver and sender will be used for message exchange
+        // The mint will send MintQuoteRequest messages via the sender
+        // The pool will receive them via the receiver
 
         Ok((
             Box::new(receiver) as Box<dyn std::any::Any + Send + Sync>,

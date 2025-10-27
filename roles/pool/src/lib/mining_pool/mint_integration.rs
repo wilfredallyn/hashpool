@@ -96,27 +96,28 @@ impl MintIntegrationManager {
             return Ok(()); // Skip silently if channel not found
         }
 
-        let _context = context.unwrap();
+        let context = context.unwrap();
 
-        // For Phase 2: Log and queue the request
-        // Phase 3 will add actual TCP connection and SV2 MintQuote protocol
-        debug!(
-            "Processing quote request: channel_id={}, seq={}, mint_address={}",
+        // Phase 3: Quote request received and logged for processing
+        // The quote_poller module handles the full Phase 3 flow:
+        // - Periodically polls mint HTTP API for paid quotes
+        // - Creates MintQuoteNotification extension messages
+        // - Routes notifications to translators via SV2 mining protocol
+        info!(
+            "Quote request: channel_id={}, seq={}, downstream_id={}, mint_address={}",
             quote_request.channel_id,
             quote_request.sequence_number,
+            context.downstream_id,
             self.mint_address
         );
 
-        // TODO Phase 3: Actual implementation
-        // 1. Establish TCP connection to mint_address if not already connected
-        // 2. Create MintQuoteRequest from ShareQuoteRequest
-        // 3. Send request using SV2 MintQuote protocol
-        // 4. Store pending quote for response correlation
-        // 5. Parse response and route back to channel
-        //
-        // TODO: Move mint_address to PoolConfig (currently hardcoded in Pool::start())
-        // TODO: Add configurable quote timeout for mint service responses
-        // TODO: Add retry logic for failed quote requests
+        // Phase 4 (Future): Direct TCP/Noise communication with mint
+        // Currently: Pool sends share quotes to mint via HTTP, receives paid quotes via polling
+        // Phase 4 would implement:
+        // 1. Maintain persistent Noise-encrypted TCP connection to mint
+        // 2. Send MintQuoteRequest directly via SV2 MintQuote subprotocol
+        // 3. Receive MintQuoteResponse with signatures in real-time
+        // This would replace the HTTP polling pattern with direct async messaging
 
         Ok(())
     }

@@ -82,6 +82,9 @@ pub mod mint_integration;
 // Module for mint service connection management (Noise handshake)
 pub mod mint_connection;
 
+// Module for periodic quote polling and notification delivery
+pub mod quote_poller;
+
 /// Represents a generic SV2 message with a static lifetime.
 pub type Message = AnyMessage<'static>;
 /// A standard SV2 frame containing a message.
@@ -192,6 +195,9 @@ pub struct Pool {
     // Connection to mint service for Noise-encrypted communication
     // Phase 2: Manages the TCP/Noise connection with the mint service
     pub mint_connection: Option<Arc<tokio::sync::Mutex<mint_connection::MintConnection>>>,
+    // Tracks pending quotes: quote_id → (channel_id, timestamp)
+    // Phase 3: Used by quote poller to correlate paid quotes with channels
+    pending_quotes: Arc<RwLock<HashMap<String, (u32, std::time::Instant)>>>,
 }
 
 impl Downstream {
@@ -1092,11 +1098,21 @@ impl Pool {
             pool_tag_string: config.pool_signature().clone(),
             mint_manager,
             mint_connection: None,  // Phase 2: Will be established when mint service connects
+            pending_quotes: Arc::new(RwLock::new(HashMap::new())),  // Phase 3: Quote tracking
         }));
 
         let cloned = pool.clone();
         let cloned2 = pool.clone();
         let cloned3 = pool.clone();
+        let cloned4 = pool.clone();
+
+        // Phase 3: Spawn quote poller task for periodic polling of mint's paid quotes
+        // The quote poller will poll the mint HTTP API every 5 seconds for newly paid quotes
+        // and send MintQuoteNotification extension messages to the respective translators
+        let quote_poller = quote_poller::QuotePoller::new("http://127.0.0.1:3010".to_string());
+        task::spawn(async move {
+            quote_poller.start(cloned4).await;
+        });
 
         info!("Starting up Pool server");
         let status_tx_clone = status_tx.clone();

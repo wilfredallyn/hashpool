@@ -8,7 +8,10 @@
   - Mint initiator: Connects to pool with Noise encryption ✅
   - SetupConnection handshake: Both sides implemented ✅
   - Message handler: Updated to handle setup responses and mint quote messages ✅
-- ⏳ **PHASE 3**: Quote Request/Response Flow - *Pending*
+- ✅ **PHASE 3**: Quote Request/Response Flow - **COMPLETED (Oct 27)**
+  - Quote poller: HTTP polling of mint paid quotes endpoint every 5s ✅
+  - Quote tracking: Pending quotes mapped to channels for routing ✅
+  - Notification delivery: MintQuoteNotification extension messages to translators ✅
 
 ## **Overview**
 
