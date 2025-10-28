@@ -2,7 +2,7 @@
 
 This project is a fork of the Stratum V2 Reference Implementation (SRI) that replaces traditional share accounting with an ecash mint. Instead of internally accounting for each miner's proof of work shares, hashpool issues an "ehash" token for each share accepted by the pool. For a limited time after issuance, ehash tokens accrue value in bitcoin as the pool finds blocks. Miners can choose to accept the 'luck risk' of finding blocks and hold these tokens to maturity or sell them early for a guaranteed payout.
 
-You can find the original SRI README [here](https://github.com/stratum-mining/stratum/blob/main/README.md).
+You can find the original SRI README [here](./SRI_README.md).
 
 ## Getting Started
 
