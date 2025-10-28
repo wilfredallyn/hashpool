@@ -900,7 +900,7 @@ impl HandleMiningMessagesFromClientAsync for ChannelManager {
                 let res = standard_channel.validate_share(msg.clone());
                 let mut is_downstream_share_valid = false;
                 match res {
-                    Ok(ShareValidationResult::Valid) => {
+                    Ok(ShareValidationResult::Valid(_accepted_share)) => {
                         info!(
                             "SubmitSharesStandard on downstream channel: valid share | channel_id: {}, sequence_number: {} ☑️",
                             channel_id, msg.sequence_number
@@ -908,6 +908,7 @@ impl HandleMiningMessagesFromClientAsync for ChannelManager {
                         is_downstream_share_valid = true;
                     }
                     Ok(ShareValidationResult::ValidWithAcknowledgement(
+                        _accepted_share,
                         last_sequence_number,
                         new_submits_accepted_count,
                         new_shares_sum,
@@ -925,7 +926,11 @@ impl HandleMiningMessagesFromClientAsync for ChannelManager {
                             Mining::SubmitSharesSuccess(success)).into(),
                         );
                     }
-                    Ok(ShareValidationResult::BlockFound(template_id, coinbase)) => {
+                    Ok(ShareValidationResult::BlockFound(
+                        _accepted_share,
+                        template_id,
+                        coinbase,
+                    )) => {
                         info!("SubmitSharesStandard on downstream channel: 💰 Block Found!!! 💰");
                         is_downstream_share_valid = true;
                         if let Some(template_id) = template_id {
@@ -1100,7 +1105,7 @@ impl HandleMiningMessagesFromClientAsync for ChannelManager {
                 let res = extended_channel.validate_share(msg.clone());
                 let mut is_downstream_share_valid = false;
                 match res {
-                    Ok(ShareValidationResult::Valid) => {
+                    Ok(ShareValidationResult::Valid(_accepted_share)) => {
                         info!(
                             "SubmitSharesExtended on downstream channel: valid share | channel_id: {}, sequence_number: {} ☑️",
                             channel_id, msg.sequence_number
@@ -1108,6 +1113,7 @@ impl HandleMiningMessagesFromClientAsync for ChannelManager {
                         is_downstream_share_valid = true;
                     }
                     Ok(ShareValidationResult::ValidWithAcknowledgement(
+                        _accepted_share,
                         last_sequence_number,
                         new_submits_accepted_count,
                         new_shares_sum,
@@ -1125,7 +1131,11 @@ impl HandleMiningMessagesFromClientAsync for ChannelManager {
                             Mining::SubmitSharesSuccess(success),
                         ).into());
                     }
-                    Ok(ShareValidationResult::BlockFound(template_id, coinbase)) => {
+                    Ok(ShareValidationResult::BlockFound(
+                        _accepted_share,
+                        template_id,
+                        coinbase,
+                    )) => {
                         info!("SubmitSharesExtended on downstream channel: 💰 Block Found!!! 💰");
                         if let Some(template_id) = template_id {
                             info!("SubmitSharesExtended: Propagating solution to the Template Provider.");

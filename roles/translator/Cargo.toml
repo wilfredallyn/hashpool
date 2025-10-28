@@ -39,8 +39,9 @@ cdk = { git = "https://github.com/vnprc/cdk.git", rev = "62114cf6" }
 cdk-sqlite = { git = "https://github.com/vnprc/cdk.git", rev = "62114cf6" }
 bip39 = "2.0"
 anyhow = "1.0"
+binary_sv2 = { path = "../../protocols/v2/binary-sv2" }
+const_sv2 = { path = "../../protocols/v2/const-sv2" }
 
 
 [dev-dependencies]
 sha2 = "0.10.6"
-

@@ -1,7 +1,5 @@
-use std::env;
-use std::path::PathBuf;
-use std::fs;
 use serde::Deserialize;
+use std::{env, fs, path::PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -99,8 +97,8 @@ impl Config {
             .map(|s| s.as_str())
             .unwrap_or("config/stats-proxy.config.toml");
 
-        let stats_proxy_config_str = fs::read_to_string(stats_proxy_config_path)
-            .unwrap_or_default();
+        let stats_proxy_config_str =
+            fs::read_to_string(stats_proxy_config_path).unwrap_or_default();
         let stats_proxy_config: StatsProxyConfig = if stats_proxy_config_str.is_empty() {
             StatsProxyConfig {
                 server: ServerConfig::default(),
@@ -193,9 +191,18 @@ impl Config {
             redact_ip: tproxy.redact_ip,
             faucet_enabled,
             faucet_url,
-            staleness_threshold_secs: stats_proxy_config.snapshot_storage.staleness_threshold_secs.unwrap_or(15),
-            request_timeout_secs: stats_proxy_config.http_client.request_timeout_secs.unwrap_or(60),
-            pool_idle_timeout_secs: stats_proxy_config.http_client.pool_idle_timeout_secs.unwrap_or(300),
+            staleness_threshold_secs: stats_proxy_config
+                .snapshot_storage
+                .staleness_threshold_secs
+                .unwrap_or(15),
+            request_timeout_secs: stats_proxy_config
+                .http_client
+                .request_timeout_secs
+                .unwrap_or(60),
+            pool_idle_timeout_secs: stats_proxy_config
+                .http_client
+                .pool_idle_timeout_secs
+                .unwrap_or(300),
         })
     }
 }
@@ -220,9 +227,18 @@ mod tests {
             request_timeout_secs = 75
         "#;
         let config: StatsProxyConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.server.tcp_listen_address, Some("127.0.0.1:4444".to_string()));
-        assert_eq!(config.server.http_listen_address, Some("127.0.0.1:4445".to_string()));
-        assert_eq!(config.snapshot_storage.db_path, Some(PathBuf::from("/tmp/stats.db")));
+        assert_eq!(
+            config.server.tcp_listen_address,
+            Some("127.0.0.1:4444".to_string())
+        );
+        assert_eq!(
+            config.server.http_listen_address,
+            Some("127.0.0.1:4445".to_string())
+        );
+        assert_eq!(
+            config.snapshot_storage.db_path,
+            Some(PathBuf::from("/tmp/stats.db"))
+        );
         assert_eq!(config.snapshot_storage.staleness_threshold_secs, Some(20));
         assert_eq!(config.http_client.pool_idle_timeout_secs, Some(400));
         assert_eq!(config.http_client.request_timeout_secs, Some(75));

@@ -12,17 +12,20 @@ use crate::{
     utils::{into_static, ShutdownMessage},
 };
 use async_channel::{Receiver, Sender};
+use cdk::wallet::Wallet;
 use std::sync::{Arc, RwLock};
 use stratum_common::roles_logic_sv2::{
     channels_sv2::client::extended::ExtendedChannel,
     codec_sv2::Frame,
     handlers_sv2::HandleMiningMessagesFromServerAsync,
-    mining_sv2::OpenExtendedMiningChannelSuccess,
+    mining_sv2::{MintQuoteFailure, MintQuoteNotification, OpenExtendedMiningChannelSuccess},
     parsers_sv2::{AnyMessage, Mining},
     utils::Mutex,
 };
 use tokio::sync::{broadcast, mpsc};
 use tracing::{debug, error, info, warn};
+
+use const_sv2::{MESSAGE_TYPE_MINT_QUOTE_FAILURE, MESSAGE_TYPE_MINT_QUOTE_NOTIFICATION};
 
 /// Extra bytes allocated for translator search space in aggregated mode.
 /// This allows the translator to manage multiple downstream connections
@@ -52,6 +55,7 @@ pub type Sv2Message = Mining<'static>;
 pub struct ChannelManager {
     pub channel_state: ChannelState,
     pub channel_manager_data: Arc<Mutex<ChannelManagerData>>,
+    wallet: Option<Arc<Wallet>>,
 }
 
 impl ChannelManager {
@@ -72,6 +76,7 @@ impl ChannelManager {
         sv1_server_sender: Sender<Mining<'static>>,
         sv1_server_receiver: Receiver<Mining<'static>>,
         mode: ChannelMode,
+        wallet: Option<Arc<Wallet>>,
     ) -> Self {
         let channel_state = ChannelState::new(
             upstream_sender,
@@ -83,6 +88,7 @@ impl ChannelManager {
         Self {
             channel_state,
             channel_manager_data,
+            wallet,
         }
     }
 
@@ -214,6 +220,16 @@ impl ChannelManager {
 
         match message {
             Message::Mining(_) => {
+                if message_type == MESSAGE_TYPE_MINT_QUOTE_NOTIFICATION {
+                    self.handle_mint_quote_notification(&payload).await?;
+                    return Ok(());
+                }
+
+                if message_type == MESSAGE_TYPE_MINT_QUOTE_FAILURE {
+                    self.handle_mint_quote_failure(&payload).await?;
+                    return Ok(());
+                }
+
                 channel_manager
                     .handle_mining_message_frame_from_server(message_type, &mut payload)
                     .await?;
@@ -648,7 +664,72 @@ impl ChannelManager {
         ChannelManager {
             channel_manager_data: self.channel_manager_data.clone(),
             channel_state: self.channel_state.clone(),
+            wallet: self.wallet.clone(),
         }
+    }
+
+    async fn handle_mint_quote_notification(&self, payload: &[u8]) -> Result<(), TproxyError> {
+        let mut payload_copy = payload.to_vec();
+        match binary_sv2::from_bytes::<MintQuoteNotification>(&mut payload_copy) {
+            Ok(notification) => {
+                let quote_id = notification.quote_id.as_utf8_or_hex().to_string();
+                let amount = notification.amount;
+                info!(
+                    "Translator: received MintQuoteNotification quote_id={} amount={}",
+                    quote_id, amount
+                );
+
+                if let Some(wallet) = &self.wallet {
+                    let wallet = wallet.clone();
+                    if let Err(e) = wallet.mint_quote_state_mining_share(&quote_id).await {
+                        warn!(
+                            "Translator: failed to persist mint quote {} to wallet: {:?}",
+                            quote_id, e
+                        );
+                    } else {
+                        debug!(
+                            "Translator: stored mint quote {} in wallet successfully",
+                            quote_id
+                        );
+                    }
+                } else {
+                    debug!(
+                        "Translator: wallet not configured; skipping persistence for quote {}",
+                        quote_id
+                    );
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Translator: failed to decode MintQuoteNotification payload: {:?}",
+                    e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_mint_quote_failure(&self, payload: &[u8]) -> Result<(), TproxyError> {
+        let mut payload_copy = payload.to_vec();
+        match binary_sv2::from_bytes::<MintQuoteFailure>(&mut payload_copy) {
+            Ok(failure) => {
+                let quote_id = failure.quote_id.as_utf8_or_hex();
+                let error_message = failure.error_message.as_utf8_or_hex();
+                warn!(
+                    "Translator: received MintQuoteFailure quote_id={} code={} message={}",
+                    quote_id, failure.error_code, error_message
+                );
+            }
+            Err(e) => {
+                warn!(
+                    "Translator: failed to decode MintQuoteFailure payload: {:?}",
+                    e
+                );
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -673,6 +754,7 @@ mod tests {
             sv1_server_sender,
             sv1_server_receiver,
             mode,
+            None,
         )
     }
 

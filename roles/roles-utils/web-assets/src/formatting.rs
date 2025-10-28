@@ -7,12 +7,12 @@ pub fn format_hash_units(value: u64) -> String {
     // Define thresholds and their corresponding units
     // Note: u64::MAX ≈ 18.4 exabits, so zettabits is unreachable
     const UNITS: &[(u64, &str, f64)] = &[
-        (1_000_000_000_000_000_000, "exabits", 1e18),   // 1 exabit
-        (1_000_000_000_000_000, "petabits", 1e15),      // 1 petabit
-        (1_000_000_000_000, "terabits", 1e12),          // 1 terabit
-        (1_000_000_000, "gigabits", 1e9),               // 1 gigabit
-        (1_000_000, "megabits", 1e6),                   // 1 megabit
-        (1_000, "kilobits", 1e3),                       // 1 kilobit
+        (1_000_000_000_000_000_000, "exabits", 1e18), // 1 exabit
+        (1_000_000_000_000_000, "petabits", 1e15),    // 1 petabit
+        (1_000_000_000_000, "terabits", 1e12),        // 1 terabit
+        (1_000_000_000, "gigabits", 1e9),             // 1 gigabit
+        (1_000_000, "megabits", 1e6),                 // 1 megabit
+        (1_000, "kilobits", 1e3),                     // 1 kilobit
     ];
 
     // Find the appropriate unit

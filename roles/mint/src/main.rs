@@ -3,12 +3,12 @@ mod lib;
 use anyhow::Result;
 use cdk_axum::cache::HttpCache;
 use cdk_mintd::config;
+use serde::{Deserialize, Serialize};
+use shared_config::PoolGlobalConfig;
+use std::fs;
 use tokio::net::TcpListener;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
-use shared_config::PoolGlobalConfig;
-use std::fs;
-use serde::{Deserialize, Serialize};
 
 /// Extended config for hashpool-specific mint settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,10 +49,10 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Parse mint config 
+    // Parse mint config
     let mint_config_str = fs::read_to_string(&mint_config_path)?;
     let mint_config: MintConfig = toml::from_str(&mint_config_str)?;
-    
+
     let global_config: PoolGlobalConfig = toml::from_str(&fs::read_to_string(global_config_path)?)?;
 
     // Setup mint with all required components - determine database path
@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!(
             "Database path must be specified either via CDK_MINT_DB_PATH environment variable or [hashpool_mint] db_path config"
         ))?;
-    
+
     tracing::info!("Using database path: {}", db_path);
     let mint = setup_mint(mint_config.cdk_settings.clone(), db_path).await?;
 
@@ -79,15 +79,15 @@ async fn main() -> Result<()> {
     // Start SV2 connection to pool if enabled
     if let Some(ref sv2_config) = global_config.sv2_messaging {
         if sv2_config.enabled {
-            tokio::spawn(connect_to_pool_sv2(
-                mint.clone(),
-                sv2_config.clone(),
-            ));
+            tokio::spawn(connect_to_pool_sv2(mint.clone(), sv2_config.clone()));
         }
     }
 
     // Start HTTP server
-    let addr = format!("{}:{}", mint_config.cdk_settings.info.listen_host, mint_config.cdk_settings.info.listen_port);
+    let addr = format!(
+        "{}:{}",
+        mint_config.cdk_settings.info.listen_host, mint_config.cdk_settings.info.listen_port
+    );
     info!("Mint listening on {}", addr);
     let listener = TcpListener::bind(&addr).await?;
 
@@ -95,4 +95,3 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
-

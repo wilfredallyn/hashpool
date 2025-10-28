@@ -42,8 +42,8 @@ mod tests {
     #[test]
     fn test_message_type_ranges() {
         const COMMON_MSG_MIN: u8 = 0x00;
-        const COMMON_MSG_MAX: u8 = 0x7F;  // Common messages use lower 7 bits
-        const MINT_MSG_MIN: u8 = 0x80;     // Mint messages start at 0x80
+        const COMMON_MSG_MAX: u8 = 0x7F; // Common messages use lower 7 bits
+        const MINT_MSG_MIN: u8 = 0x80; // Mint messages start at 0x80
         const MINT_MSG_MAX: u8 = 0xFF;
 
         // All common message types should be in range [0x00, 0x7F]
@@ -71,7 +71,10 @@ mod tests {
         const MIN_VERSION: u16 = 2;
         const MAX_VERSION: u16 = 2;
 
-        assert_eq!(MIN_VERSION, MAX_VERSION, "Mint should support only version 2");
+        assert_eq!(
+            MIN_VERSION, MAX_VERSION,
+            "Mint should support only version 2"
+        );
         assert_eq!(MIN_VERSION, 2, "Version should be 2 for SRI 1.5.0");
     }
 

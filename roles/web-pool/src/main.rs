@@ -1,11 +1,10 @@
-use std::sync::Arc;
-use std::time::Duration;
+use stats::stats_adapter::PoolSnapshot;
+use std::{sync::Arc, time::Duration};
 use tokio::time;
 use tracing::{error, info};
 use tracing_subscriber;
-use stats::stats_adapter::PoolSnapshot;
 
-use web_pool::{SnapshotStorage, config::Config};
+use web_pool::{config::Config, SnapshotStorage};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,8 +21,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting web-pool service");
     info!("Stats pool URL: {}", config.stats_pool_url);
     info!("Web server address: {}", config.web_server_address);
-    info!("Stats polling interval: {} seconds", config.stats_poll_interval_secs);
-    info!("Client polling interval: {} seconds", config.client_poll_interval_secs);
+    info!(
+        "Stats polling interval: {} seconds",
+        config.stats_poll_interval_secs
+    );
+    info!(
+        "Client polling interval: {} seconds",
+        config.client_poll_interval_secs
+    );
 
     // Create shared snapshot storage
     let storage = Arc::new(SnapshotStorage::new());
@@ -35,16 +40,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let request_timeout = config.request_timeout_secs;
     let pool_idle_timeout = config.pool_idle_timeout_secs;
     tokio::spawn(async move {
-        poll_stats_pool(storage_clone, stats_pool_url, poll_interval, request_timeout, pool_idle_timeout).await;
+        poll_stats_pool(
+            storage_clone,
+            stats_pool_url,
+            poll_interval,
+            request_timeout,
+            pool_idle_timeout,
+        )
+        .await;
     });
 
     // Start HTTP server with client polling interval
-    start_web_server(config.web_server_address, storage, config.client_poll_interval_secs).await?;
+    start_web_server(
+        config.web_server_address,
+        storage,
+        config.client_poll_interval_secs,
+    )
+    .await?;
 
     Ok(())
 }
 
-async fn poll_stats_pool(storage: Arc<SnapshotStorage>, stats_pool_url: String, poll_interval_secs: u64, request_timeout_secs: u64, pool_idle_timeout_secs: u64) {
+async fn poll_stats_pool(
+    storage: Arc<SnapshotStorage>,
+    stats_pool_url: String,
+    poll_interval_secs: u64,
+    request_timeout_secs: u64,
+    pool_idle_timeout_secs: u64,
+) {
     let client = reqwest::Client::builder()
         .pool_idle_timeout(Duration::from_secs(pool_idle_timeout_secs))
         .pool_max_idle_per_host(1)

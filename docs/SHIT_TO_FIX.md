@@ -215,6 +215,19 @@ tokio::spawn(async move {
 
 ---
 
+### Mint Quote Plumbing Cleanups (from rework plan)
+
+**Status:** Functional but carrying technical debt
+**Priority:** Medium – keeps future maintenance simple
+
+1. **Unify quote tracking in the hub.** `QuotePoller` still maintains its own `pending_quotes` map (`roles/pool/src/lib/mining_pool/quote_poller.rs:28`). Move it to rely on `MintPoolMessageHub::pending_quote` / `PendingQuoteContext` so there is one source of truth for outstanding quotes.
+2. **Use typed frame builders.** The mint forwarding path still hand-builds frames with `StandardSv2Frame::from_bytes_unchecked()` (`roles/pool/src/lib/mining_pool/mint_connection.rs:315`). Switch to the helpers in `roles/roles-utils/mint-pool-messaging/src/sv2_frames.rs` to remove manual header math.
+3. **Decide who owns channel context.** `MintIntegrationManager` only proxies locking-key lookups (`roles/pool/src/lib/mining_pool/mint_integration.rs:14`). Fold that state into `MintPoolMessageHub` (or document why we can’t) so quote routing doesn’t depend on duplicate maps.
+
+Follow-up: After the hub owns pending state, the poller can just iterate `hub.pending_quotes()` and we can delete the bespoke tracker entirely.
+
+---
+
 ## Low Priority
 
 ### Stats Service Connection Identity
@@ -241,4 +254,3 @@ The mint connection doesn't go through the normal downstream ID allocation becau
 - Test mint behavior when pool restarts
 - Test what happens when mint and JD both connect simultaneously
 - Load testing with multiple mints
-

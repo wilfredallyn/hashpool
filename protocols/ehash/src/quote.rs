@@ -7,7 +7,7 @@ use cdk::{
     Amount,
 };
 use cdk_common::mint::MintQuote;
-use mint_quote_sv2::{MintQuoteRequest, MintQuoteResponse, CompressedPubKey};
+use mint_quote_sv2::{CompressedPubKey, MintQuoteRequest, MintQuoteResponse};
 use thiserror::Error;
 
 use crate::share::{ShareHash, ShareHashError};
@@ -198,11 +198,14 @@ mod tests {
         let sk = SecretKey::from_slice(&[1u8; 32]).expect("valid secret key");
         let pk = secp256k1::PublicKey::from_secret_key(&secp, &sk);
 
-        let mut bytes = pk.serialize();
-        let compressed = CompressedPubKey::from_bytes(&mut bytes)
+        let serialized = pk.serialize();
+        let mut encoded = vec![0u8; serialized.len() + 1];
+        encoded[0] = serialized.len() as u8;
+        encoded[1..].copy_from_slice(&serialized);
+        let compressed = CompressedPubKey::from_bytes(&mut encoded)
             .expect("compress pubkey")
             .into_static();
-        let cdk_pub = PublicKey::from_slice(&bytes).expect("cdk public key");
+        let cdk_pub = PublicKey::from_slice(&serialized).expect("cdk public key");
         (compressed, cdk_pub)
     }
 

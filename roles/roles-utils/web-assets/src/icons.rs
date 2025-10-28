@@ -10,8 +10,7 @@ pub const BLOCK_ICON_INLINE_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/s
 pub const COINS_ICON_INLINE_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="#00ff00"><path d="M16.495 10.255a6.5 6.5 0 01-6.24 6.24 4.5 4.5 0 106.24-6.24z"></path><circle cx="10" cy="10" r="4.5"></circle></svg>"##;
 
 fn encode_for_data_uri(svg: &str) -> String {
-    svg
-        .replace('#', "%23")
+    svg.replace('#', "%23")
         .replace('<', "%3C")
         .replace('>', "%3E")
         .replace('"', "%22")

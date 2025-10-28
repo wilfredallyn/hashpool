@@ -7,6 +7,13 @@ broadcast_buffer_size = 1000
 mpsc_buffer_size = 100
 max_retries = 3
 timeout_ms = 5000
+# Pool's Noise protocol public key (for mint to connect to pool)
+pool_authority_public_key = "9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72"
+
+[locking]
+# Miner's compressed public key for quote attribution (33 bytes in hex)
+# This is derived from the pool's wallet's public key
+locking_pubkey = "0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
 
 [mint]
 host = "localhost"

@@ -14,6 +14,8 @@ use async_channel::{bounded, unbounded};
 use config::PoolConfig;
 use error::PoolError;
 use mining_pool::Pool;
+use mint_pool_messaging::{MessagingConfig, MintPoolMessageHub};
+use quote_dispatcher::QuoteDispatcher;
 use std::sync::{Arc, Mutex};
 use stratum_common::roles_logic_sv2::bitcoin::{
     absolute::LockTime,
@@ -70,14 +72,38 @@ impl PoolSv2 {
         let (s_new_t, r_new_t) = bounded(10); // New template updates.
         let (s_prev_hash, r_prev_hash) = bounded(10); // Previous hash updates.
         let (s_solution, r_solution) = bounded(10); // Share solution submissions from downstream.
-        // Quote dispatcher channel for share-to-quote flow (optional, for hashpool integration)
-        use mining_pool::ShareQuoteRequest;
-        let (s_quote_dispatcher, r_quote_dispatcher) = bounded::<ShareQuoteRequest>(100); // Quote requests for accepted shares.
 
         // This channel does something weird, it sends zero sized data from downstream upon
         // retrieval of any message from template receiver, and make the template receiver
         // wait until it receivers confirmation from downstream. Can be removed.
         let (s_message_recv_signal, r_message_recv_signal) = bounded(10);
+
+        // Instantiate mint messaging hub and quote dispatcher based on shared config
+        let sv2_messaging_cfg = config.sv2_messaging().cloned();
+        let messaging_config = sv2_messaging_cfg
+            .as_ref()
+            .map(|cfg| MessagingConfig {
+                broadcast_buffer_size: cfg.broadcast_buffer_size,
+                mpsc_buffer_size: cfg.mpsc_buffer_size,
+                max_retries: cfg.max_retries,
+                timeout_ms: cfg.timeout_ms,
+            })
+            .unwrap_or_default();
+        let mint_hub = MintPoolMessageHub::new(messaging_config);
+        let minimum_difficulty = config.minimum_difficulty().unwrap_or(32);
+        let quote_dispatcher = if sv2_messaging_cfg
+            .as_ref()
+            .map(|cfg| cfg.enabled)
+            .unwrap_or(true)
+        {
+            Some(Arc::new(QuoteDispatcher::new(
+                mint_hub.clone(),
+                sv2_messaging_cfg.clone(),
+                minimum_difficulty,
+            )))
+        } else {
+            None
+        };
 
         // Prepare coinbase output information required by TemplateRx.
         // We use an empty output here only for calculation of the size and sigops of the coinbase
@@ -132,26 +158,14 @@ impl PoolSv2 {
             r_new_t,
             r_prev_hash,
             s_solution,
-            Some(s_quote_dispatcher),
+            quote_dispatcher.clone(),
+            mint_hub.clone(),
             s_message_recv_signal,
             status::Sender::DownstreamListener(status_tx),
             config.shares_per_minute(),
             recv_stop_signal,
         )
         .await?;
-
-        // --- Spawn Mint Integration Task ---
-        // This task processes quote requests and forwards them to the mint service
-        let mint_mgr = {
-            let mint_manager_result = pool.safe_lock(|p| p.mint_manager.clone());
-            mint_manager_result.ok()
-        };
-
-        if let Some(mgr) = mint_mgr {
-            tokio::spawn(async move {
-                mgr.start(r_quote_dispatcher).await;
-            });
-        }
 
         // Monitor the status of Template Receiver and downstream connections.
         // Start the error handling loop

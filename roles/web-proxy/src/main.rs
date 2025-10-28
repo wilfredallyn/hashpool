@@ -1,11 +1,10 @@
-use std::sync::Arc;
-use std::time::Duration;
+use stats::stats_adapter::ProxySnapshot;
+use std::{sync::Arc, time::Duration};
 use tokio::time;
 use tracing::{error, info};
 use tracing_subscriber;
-use stats::stats_adapter::ProxySnapshot;
 
-use web_proxy::{SnapshotStorage, config::Config};
+use web_proxy::{config::Config, SnapshotStorage};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,7 +22,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Stats proxy URL: {}", config.stats_proxy_url);
     info!("Web server address: {}", config.web_server_address);
     info!("Stats poll interval: {}s", config.stats_poll_interval_secs);
-    info!("Client poll interval: {}s", config.client_poll_interval_secs);
+    info!(
+        "Client poll interval: {}s",
+        config.client_poll_interval_secs
+    );
 
     // Create shared snapshot storage
     let storage = Arc::new(SnapshotStorage::new());
@@ -53,7 +55,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-async fn poll_stats_proxy(storage: Arc<SnapshotStorage>, stats_proxy_url: String, poll_interval_secs: u64) {
+async fn poll_stats_proxy(
+    storage: Arc<SnapshotStorage>,
+    stats_proxy_url: String,
+    poll_interval_secs: u64,
+) {
     let client = reqwest::Client::builder()
         .pool_idle_timeout(Duration::from_secs(300))
         .pool_max_idle_per_host(1)

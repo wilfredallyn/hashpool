@@ -4,7 +4,7 @@
 //! and provides backward compatibility helpers.
 
 // Re-export message types from ehash protocol crate
-pub use ehash::{MintQuoteMessage, MessageType};
+pub use ehash::{MessageType, MintQuoteMessage};
 
 /// Simple message codec for mint-quote messages
 /// Note: Full SV2 framing will be added in later phases

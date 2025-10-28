@@ -1,20 +1,18 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::str::FromStr;
+use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
 
-use cdk::mint::Mint;
-use cdk::nuts::{CurrencyUnit, MintInfo, Nuts, PaymentMethod, MintMethodSettings};
-use cdk::types::QuoteTTL;
-use cdk::Amount;
-use cdk_mintd::config::{self, LnBackend};
-use cdk::cdk_payment::MintPayment;
-use cdk::cdk_payment;
-use cdk_signatory::db_signatory::DbSignatory;
-use cdk::types::PaymentProcessorKey;
-use cdk_sqlite::MintSqliteDatabase;
+use anyhow::{bail, Result};
 use bip39::Mnemonic;
-use anyhow::{Result, bail};
+use cdk::{
+    cdk_payment,
+    cdk_payment::MintPayment,
+    mint::Mint,
+    nuts::{CurrencyUnit, MintInfo, MintMethodSettings, Nuts, PaymentMethod},
+    types::{PaymentProcessorKey, QuoteTTL},
+    Amount,
+};
+use cdk_mintd::config::{self, LnBackend};
+use cdk_signatory::db_signatory::DbSignatory;
+use cdk_sqlite::MintSqliteDatabase;
 
 /// Setup and initialize the mint with all required components  
 pub async fn setup_mint(mint_settings: config::Settings, db_path: String) -> Result<Arc<Mint>> {
@@ -36,15 +34,15 @@ pub async fn setup_mint(mint_settings: config::Settings, db_path: String) -> Res
     let db = Arc::new(MintSqliteDatabase::new(mint_db_path).await?);
 
     let signatory = Arc::new(
-        DbSignatory::new(
-            db.clone(),
-            seed_bytes,
-            currency_units,
-            HashMap::new(),
-        ).await.unwrap()
+        DbSignatory::new(db.clone(), seed_bytes, currency_units, HashMap::new())
+            .await
+            .unwrap(),
     );
 
-    let ln: HashMap<PaymentProcessorKey, Arc<dyn MintPayment<Err = cdk_payment::Error> + Send + Sync>> = HashMap::new();
+    let ln: HashMap<
+        PaymentProcessorKey,
+        Arc<dyn MintPayment<Err = cdk_payment::Error> + Send + Sync>,
+    > = HashMap::new();
 
     // Configure NUT-04 settings for MiningShare payment method with HASH unit
     let mining_share_method = MintMethodSettings {
@@ -55,11 +53,11 @@ pub async fn setup_mint(mint_settings: config::Settings, db_path: String) -> Res
         max_amount: Some(Amount::from(u64::MAX)),
         options: None,
     };
-    
+
     let mut nuts = Nuts::new();
     nuts.nut04.methods.push(mining_share_method);
     nuts.nut04.disabled = false;
-    
+
     let mint_info = MintInfo {
         name: Some(mint_settings.mint_info.name.clone()),
         description: Some(mint_settings.mint_info.description.clone()),
@@ -75,13 +73,8 @@ pub async fn setup_mint(mint_settings: config::Settings, db_path: String) -> Res
         tos_url: None,
     };
 
-    let mint = Arc::new(Mint::new(
-        mint_info,
-        signatory,
-        db,
-        ln,
-    ).await.unwrap());
-    
+    let mint = Arc::new(Mint::new(mint_info, signatory, db, ln).await.unwrap());
+
     mint.set_quote_ttl(QuoteTTL::new(10_000, 10_000)).await?;
 
     // Start background tasks for invoice monitoring
@@ -93,7 +86,7 @@ pub async fn setup_mint(mint_settings: config::Settings, db_path: String) -> Res
 /// Resolve and prepare database path
 pub fn resolve_and_prepare_db_path(config_path: &str) -> PathBuf {
     use std::{env, path::Path};
-    
+
     let path = Path::new(config_path);
     let full_path = if path.is_absolute() {
         path.to_path_buf()
@@ -106,11 +99,9 @@ pub fn resolve_and_prepare_db_path(config_path: &str) -> PathBuf {
     // Create parent directories if they don't exist
     if let Some(parent) = full_path.parent() {
         if !parent.exists() {
-            std::fs::create_dir_all(parent)
-                .expect("Failed to create database directory");
+            std::fs::create_dir_all(parent).expect("Failed to create database directory");
         }
     }
 
     full_path
 }
-

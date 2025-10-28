@@ -34,6 +34,7 @@ use core::{
 extern crate alloc;
 
 mod close_channel;
+mod mint_quote_notification;
 mod new_mining_job;
 mod open_channel;
 mod set_custom_mining_job;
@@ -43,10 +44,10 @@ mod set_new_prev_hash;
 mod set_target;
 mod submit_shares;
 mod update_channel;
-mod mint_quote_notification;
 
 pub use close_channel::CloseChannel;
 use core::ops::Range;
+pub use mint_quote_notification::{MintQuoteFailure, MintQuoteNotification};
 pub use new_mining_job::{NewExtendedMiningJob, NewMiningJob};
 pub use open_channel::{
     OpenExtendedMiningChannel, OpenExtendedMiningChannelSuccess, OpenMiningChannelError,
@@ -63,7 +64,6 @@ pub use submit_shares::{
     SubmitSharesError, SubmitSharesExtended, SubmitSharesStandard, SubmitSharesSuccess,
 };
 pub use update_channel::{UpdateChannel, UpdateChannelError};
-pub use mint_quote_notification::{MintQuoteNotification, MintQuoteFailure};
 
 // Mining Protocol message types.
 pub const MESSAGE_TYPE_OPEN_STANDARD_MINING_CHANNEL: u8 = 0x10;

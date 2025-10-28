@@ -1,5 +1,5 @@
-use std::sync::{Arc, RwLock};
 use stats::stats_adapter::PoolSnapshot;
+use std::sync::{Arc, RwLock};
 
 pub mod config;
 pub mod web;

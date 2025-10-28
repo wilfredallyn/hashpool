@@ -1,5 +1,4 @@
-use alloc::fmt;
-use alloc::vec::Vec;
+use alloc::{fmt, vec::Vec};
 use binary_sv2::{binary_codec_sv2, Deserialize, Serialize, Str0255};
 
 /// Notification sent to downstream when a quote becomes payable

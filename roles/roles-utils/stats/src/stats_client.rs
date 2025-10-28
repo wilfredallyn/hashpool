@@ -1,9 +1,6 @@
 use serde::Serialize;
-use std::marker::PhantomData;
-use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
-use tokio::sync::Mutex;
+use std::{marker::PhantomData, sync::Arc};
+use tokio::{io::AsyncWriteExt, net::TcpStream, sync::Mutex};
 use tracing::{debug, warn};
 
 /// TCP client that sends JSON snapshots to stats service
@@ -45,10 +42,7 @@ where
                 Ok(())
             }
             Err(e) => {
-                warn!(
-                    "Failed to send snapshot to {}: {}",
-                    self.address, e
-                );
+                warn!("Failed to send snapshot to {}: {}", self.address, e);
                 Err(e)
             }
         }
@@ -121,8 +115,7 @@ impl std::error::Error for StatsClientError {}
 mod tests {
     use super::*;
     use crate::stats_adapter::ProxySnapshot;
-    use tokio::io::AsyncReadExt;
-    use tokio::net::TcpListener;
+    use tokio::{io::AsyncReadExt, net::TcpListener};
 
     #[tokio::test]
     async fn test_stats_client_sends_json() {

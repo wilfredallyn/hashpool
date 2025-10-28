@@ -27,8 +27,11 @@ use crate::config::PoolConfig;
 use async_channel::{Receiver, Sender};
 use config_helpers_sv2::CoinbaseRewardScript;
 use error_handling::handle_result;
+use hex;
 use key_utils::SignatureService;
+use mint_pool_messaging::MintPoolMessageHub;
 use nohash_hasher::BuildNoHashHasher;
+use quote_dispatcher::QuoteDispatcher;
 use secp256k1;
 use std::{
     collections::HashMap,
@@ -92,33 +95,12 @@ pub type StdFrame = StandardSv2Frame<Message>;
 /// A standard SV2 frame that can contain either type of frame.
 pub type EitherFrame = StandardEitherFrame<Message>;
 
-/// Request to create a quote for an accepted share.
-///
-/// This is passed to the quote dispatcher whenever a share is accepted by the pool.
-/// The dispatcher uses this information to create a mint quote in the Cashu mint service.
-#[derive(Debug, Clone)]
-pub struct ShareQuoteRequest {
-    /// The channel ID that submitted the share
-    pub channel_id: u32,
-    /// The sequence number from the share submission
-    pub sequence_number: u32,
-    /// The share header hash (32 bytes)
-    pub header_hash: Vec<u8>,
-    /// The block version from the share
-    pub block_version: u32,
-    /// The block timestamp from the share
-    pub block_timestamp: u32,
-    /// The block nonce from the share
-    pub block_nonce: u32,
-}
-
 /// Represents a single connection to a downstream miner.
 ///
 /// Encapsulates the state and communication channels for one miner. An instance
 /// is created for each accepted TCP connection after the Noise handshake and SV2
 /// setup messages are successfully exchanged. Each `Downstream` runs its own message
 /// receiving loop in a separate Tokio task.
-#[derive(Debug)]
 pub struct Downstream {
     // The unique identifier for this downstream connection's channel or group.
     id: u32,
@@ -133,9 +115,13 @@ pub struct Downstream {
     // Sender channel to forward valid `SubmitSolution` messages received from this
     // downstream miner to the main [`Pool`] task, which then sends them upstream.
     solution_sender: Sender<SubmitSolution<'static>>,
-    // Sender channel to forward quote requests for accepted shares to the mint quote dispatcher.
-    // This enables quote creation for each accepted share.
-    quote_dispatcher_sender: Option<Sender<ShareQuoteRequest>>,
+    // Quote dispatcher handle for routing accepted shares to the mint messaging hub
+    quote_dispatcher: Option<Arc<QuoteDispatcher>>,
+    // Reference to the mint integration manager for channel registration/tracking
+    mint_manager: Arc<mint_integration::MintIntegrationManager>,
+    // Compressed public key (33 bytes) for quote attribution to this miner
+    // Used in share quote requests for eHash attribution
+    locking_key_bytes: Option<Vec<u8>>,
     channel_id_factory: IdFactory,
     extranonce_prefix_factory_extended: Arc<Mutex<ExtendedExtranonce>>,
     extranonce_prefix_factory_standard: Arc<Mutex<ExtendedExtranonce>>,
@@ -161,6 +147,17 @@ pub struct Downstream {
     pool_tag_string: String,
 }
 
+impl std::fmt::Debug for Downstream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Downstream")
+            .field("id", &self.id)
+            .field("requires_standard_jobs", &self.requires_standard_jobs)
+            .field("requires_custom_work", &self.requires_custom_work)
+            .field("share_batch_size", &self.share_batch_size)
+            .finish()
+    }
+}
+
 /// The central state manager for the mining pool.
 ///
 /// Holds all active downstream connections and manages the overall pool logic.
@@ -174,9 +171,8 @@ pub struct Pool {
     // Sender channel to forward solutions received from any downstream connection
     // to the upstream Template Provider connection task.
     solution_sender: Sender<SubmitSolution<'static>>,
-    // Sender channel to forward quote requests for accepted shares to the mint quote dispatcher.
-    // This is optional and can be None if quote dispatching is not configured.
-    quote_dispatcher_sender: Option<Sender<ShareQuoteRequest>>,
+    // Quote dispatcher handle for routing accepted shares to the mint messaging hub
+    quote_dispatcher: Option<Arc<QuoteDispatcher>>,
     // Flag indicating whether at least one `NewTemplate` has been received and processed.
     // Might be used to ensure initial jobs are sent before accepting solutions??.
     new_template_processed: bool,
@@ -192,12 +188,12 @@ pub struct Pool {
     pool_tag_string: String,
     // Manager for mint service integration (channel tracking, quote dispatching)
     pub mint_manager: Arc<mint_integration::MintIntegrationManager>,
+    pub mint_hub: Arc<MintPoolMessageHub>,
     // Connection to mint service for Noise-encrypted communication
     // Phase 2: Manages the TCP/Noise connection with the mint service
     pub mint_connection: Option<Arc<tokio::sync::Mutex<mint_connection::MintConnection>>>,
-    // Tracks pending quotes: quote_id → (channel_id, timestamp)
-    // Phase 3: Used by quote poller to correlate paid quotes with channels
-    pending_quotes: Arc<RwLock<HashMap<String, (u32, std::time::Instant)>>>,
+    // Miner's compressed public key for quote attribution (33 bytes as Vec<u8>)
+    locking_key_bytes: Option<Vec<u8>>,
 }
 
 impl Downstream {
@@ -213,12 +209,12 @@ impl Downstream {
         mut receiver: Receiver<EitherFrame>,
         mut sender: Sender<EitherFrame>,
         solution_sender: Sender<SubmitSolution<'static>>,
-        quote_dispatcher_sender: Option<Sender<ShareQuoteRequest>>,
         pool: Arc<Mutex<Pool>>,
         status_tx: status::Sender,
         address: SocketAddr,
         shares_per_minute: f32,
         coinbase_reward_script: CoinbaseRewardScript,
+        locking_key_bytes: Option<Vec<u8>>,
     ) -> PoolResult<Arc<Mutex<Self>>> {
         // Handle the SV2 SetupConnection message exchange.
         let setup_connection = Arc::new(Mutex::new(SetupConnectionHandler::new()));
@@ -264,6 +260,8 @@ impl Downstream {
         })?;
 
         let pool_tag = pool.safe_lock(|p| p.pool_tag_string.clone())?;
+        let mint_manager = pool.safe_lock(|p| p.mint_manager.clone())?;
+        let quote_dispatcher = pool.safe_lock(|p| p.quote_dispatcher.clone())?;
 
         // Create the Downstream instance, wrapped for shared access.
         let self_ = Arc::new(Mutex::new(Downstream {
@@ -273,7 +271,8 @@ impl Downstream {
             requires_standard_jobs,
             requires_custom_work,
             solution_sender,
-            quote_dispatcher_sender,
+            quote_dispatcher,
+            mint_manager,
             channel_id_factory,
             extended_channels: HashMap::new(),
             standard_channels: HashMap::new(),
@@ -287,6 +286,7 @@ impl Downstream {
             last_new_prev_hash,
             coinbase_reward_script,
             pool_tag_string: pool_tag,
+            locking_key_bytes,
         }));
 
         tokio::spawn(spawn_vardiff_loop(self_.clone(), sender.clone(), id));
@@ -547,21 +547,21 @@ impl Pool {
         coinbase_reward_script: CoinbaseRewardScript,
     ) -> PoolResult<()> {
         let solution_sender = self_.safe_lock(|p| p.solution_sender.clone())?;
-        let quote_dispatcher_sender = self_.safe_lock(|p| p.quote_dispatcher_sender.clone())?;
         let status_tx = self_.safe_lock(|s| s.status_tx.clone())?;
+        let locking_key_bytes = self_.safe_lock(|p| p.locking_key_bytes.clone())?;
 
         // Create the Downstream instance
         let downstream = Downstream::new(
             receiver,
             sender,
             solution_sender,
-            quote_dispatcher_sender,
             self_.clone(),
             // convert Listener variant to Downstream variant
             status_tx.listener_to_connection(),
             address,
             shares_per_minute,
             coinbase_reward_script,
+            locking_key_bytes,
         )
         .await?;
 
@@ -1030,7 +1030,8 @@ impl Pool {
         new_template_rx: Receiver<NewTemplate<'static>>,
         new_prev_hash_rx: Receiver<SetNewPrevHashTdp<'static>>,
         solution_sender: Sender<SubmitSolution<'static>>,
-        quote_dispatcher_sender: Option<Sender<ShareQuoteRequest>>,
+        quote_dispatcher: Option<Arc<QuoteDispatcher>>,
+        mint_hub: Arc<MintPoolMessageHub>,
         sender_message_received_signal: Sender<()>,
         status_tx: status::Sender,
         shares_per_minute: f32,
@@ -1073,16 +1074,59 @@ impl Pool {
                 .expect("Failed to create ExtendedExtranonce with valid ranges");
 
         // --- Initialize Pool State ---
-        // Initialize mint integration manager with default mint address
-        // TODO: Move this to PoolConfig instead of hardcoding
-        // The mint service listens on this address by default
-        let mint_address = "127.0.0.1:34260".to_string();
-        let mint_manager = Arc::new(mint_integration::MintIntegrationManager::new(mint_address));
+        // Initialize mint integration manager using shared configuration when available
+        let mint_listen_addr_str = config
+            .sv2_messaging()
+            .map(|cfg| cfg.mint_listen_address.clone())
+            .unwrap_or_else(|| "127.0.0.1:34260".to_string());
+        let mint_manager = Arc::new(mint_integration::MintIntegrationManager::new(
+            mint_listen_addr_str.clone(),
+        ));
+
+        // Convert locking_pubkey from hex string to Vec<u8>
+        debug!("🔍 Checking if config has locking_pubkey...");
+        let locking_key_bytes: Option<Vec<u8>> = config.locking_pubkey().and_then(|hex_key| {
+            debug!("📝 Found locking_pubkey in config: {}", hex_key);
+            match hex::decode(hex_key) {
+                Ok(decoded) => {
+                    debug!(
+                        "✅ Successfully decoded hex string to {} bytes",
+                        decoded.len()
+                    );
+                    if let Err(e) = secp256k1::PublicKey::from_slice(&decoded) {
+                        error!(
+                            "❌ locking_pubkey is not a valid secp256k1 public key: {}",
+                            e
+                        );
+                        None
+                    } else {
+                        Some(decoded)
+                    }
+                }
+                Err(e) => {
+                    error!("❌ Failed to decode hex locking_pubkey: {}", e);
+                    None
+                }
+            }
+        });
+
+        if let Some(ref key_bytes) = locking_key_bytes {
+            if key_bytes.len() != 33 {
+                warn!(
+                    "⚠️  locking_pubkey has invalid length: expected 33 bytes, got {}",
+                    key_bytes.len()
+                );
+            } else {
+                info!("✅ Loaded locking_pubkey successfully: 33 bytes (compressed pubkey)");
+            }
+        } else {
+            warn!("⚠️  locking_pubkey is NOT set in config - quotes will NOT be attributed to miners!");
+        }
 
         let pool = Arc::new(Mutex::new(Pool {
             downstreams: HashMap::with_hasher(BuildNoHashHasher::default()),
             solution_sender,
-            quote_dispatcher_sender,
+            quote_dispatcher,
             new_template_processed: false,
             downstream_id_factory: IdFactory::new(),
             status_tx: status_tx.clone(),
@@ -1097,8 +1141,9 @@ impl Pool {
             last_new_prev_hash: None,
             pool_tag_string: config.pool_signature().clone(),
             mint_manager,
-            mint_connection: None,  // Phase 2: Will be established when mint service connects
-            pending_quotes: Arc::new(RwLock::new(HashMap::new())),  // Phase 3: Quote tracking
+            mint_hub: mint_hub.clone(),
+            mint_connection: None, // Phase 2: Will be established when mint service connects
+            locking_key_bytes,
         }));
 
         let cloned = pool.clone();
@@ -1106,13 +1151,55 @@ impl Pool {
         let cloned3 = pool.clone();
         let cloned4 = pool.clone();
 
+        // Phase 2: Spawn mint connection listener task
+        // This listens for incoming connections from the mint service on port 34260
+        // Pass the pool's configured authority keys so the responder can sign with the correct key
+        let authority_secret_key = config.authority_secret_key().clone();
+        let authority_public_key = config.authority_public_key().clone();
+        let cert_validity_sec = config.cert_validity_sec();
+
+        let mint_addr: std::net::SocketAddr = mint_listen_addr_str
+            .parse()
+            .expect("Failed to parse mint listen address");
+        let mint_connection_arc = Arc::new(tokio::sync::Mutex::new(
+            mint_connection::MintConnection::with_keys(
+                mint_addr,
+                authority_secret_key,
+                authority_public_key,
+                std::time::Duration::from_secs(cert_validity_sec),
+            ),
+        ));
+
+        pool.safe_lock(|p| {
+            p.mint_connection = Some(mint_connection_arc.clone());
+        })?;
+
+        let hub_for_conn = mint_hub.clone();
+        task::spawn(async move {
+            let mut guard = mint_connection_arc.lock().await;
+
+            if let Err(e) = guard.establish_connection(hub_for_conn.clone()).await {
+                error!("Failed to establish mint connection: {}", e);
+                return;
+            }
+
+            info!("✅ Mint connection established");
+        });
+
         // Phase 3: Spawn quote poller task for periodic polling of mint's paid quotes
         // The quote poller will poll the mint HTTP API every 5 seconds for newly paid quotes
         // and send MintQuoteNotification extension messages to the respective translators
-        let quote_poller = quote_poller::QuotePoller::new("http://127.0.0.1:3010".to_string());
-        task::spawn(async move {
-            quote_poller.start(cloned4).await;
-        });
+        if let Some(http_url) = config.mint_http_url().map(|s| s.to_string()) {
+            let quote_poller = Arc::new(quote_poller::QuotePoller::new(Some(http_url.clone())));
+            let poller_for_task = quote_poller.clone();
+            let hub_for_poller = mint_hub.clone();
+            info!("Starting quote poller using endpoint {}", http_url);
+            task::spawn(async move {
+                poller_for_task.start(cloned4, hub_for_poller).await;
+            });
+        } else {
+            info!("Skipping quote poller startup (no mint HTTP endpoint configured)");
+        }
 
         info!("Starting up Pool server");
         let status_tx_clone = status_tx.clone();

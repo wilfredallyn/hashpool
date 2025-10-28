@@ -71,10 +71,7 @@ impl ConnectionStateMachine {
                 info!("✅ State transition: Disconnected → Connecting");
                 Ok(())
             }
-            other => Err(format!(
-                "Cannot connect from state: {}",
-                other
-            )),
+            other => Err(format!("Cannot connect from state: {}", other)),
         }
     }
 
@@ -87,10 +84,7 @@ impl ConnectionStateMachine {
                 info!("✅ State transition: Connecting → SetupInProgress");
                 Ok(())
             }
-            other => Err(format!(
-                "Cannot complete handshake from state: {}",
-                other
-            )),
+            other => Err(format!("Cannot complete handshake from state: {}", other)),
         }
     }
 
@@ -103,10 +97,7 @@ impl ConnectionStateMachine {
                 info!("✅ State transition: SetupInProgress → Ready");
                 Ok(())
             }
-            other => Err(format!(
-                "Cannot accept setup from state: {}",
-                other
-            )),
+            other => Err(format!("Cannot accept setup from state: {}", other)),
         }
     }
 

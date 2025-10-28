@@ -1,15 +1,13 @@
-use std::convert::Infallible;
-use std::sync::Arc;
-use hyper::body::Incoming;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::{Method, Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
+use bytes::Bytes;
 use http_body_util::Full;
+use hyper::{
+    body::Incoming, server::conn::http1, service::service_fn, Method, Request, Response, StatusCode,
+};
+use hyper_util::rt::TokioIo;
+use serde_json::json;
+use std::{convert::Infallible, sync::Arc};
 use tokio::net::TcpListener;
 use tracing::{error, info};
-use bytes::Bytes;
-use serde_json::json;
 
 use crate::db::StatsData;
 
@@ -85,12 +83,16 @@ async fn get_snapshot(db: Arc<StatsData>) -> String {
 async fn get_miner_stats(db: Arc<StatsData>, redact_ip: bool) -> serde_json::Value {
     match db.get_latest_snapshot() {
         Some(snapshot) => {
-            let miners: Vec<_> = snapshot.downstream_miners.into_iter().map(|mut m| {
-                if redact_ip {
-                    m.address = m.address.split(':').next().unwrap_or("").to_string() + ":****";
-                }
-                m
-            }).collect();
+            let miners: Vec<_> = snapshot
+                .downstream_miners
+                .into_iter()
+                .map(|mut m| {
+                    if redact_ip {
+                        m.address = m.address.split(':').next().unwrap_or("").to_string() + ":****";
+                    }
+                    m
+                })
+                .collect();
             json!({ "miners": miners })
         }
         None => json!({ "miners": [] }),

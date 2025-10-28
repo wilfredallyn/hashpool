@@ -7,13 +7,13 @@ pub use derive_codec_sv2::{Decodable as Deserialize, Encodable as Serialize};
 
 use core::convert::TryInto;
 
-/// Type alias for a 33-byte compressed public key (binary data)
-pub type CompressedPubKey<'a> = B032<'a>;
+/// Type alias for a compressed secp256k1 public key (33 bytes).
+pub type CompressedPubKey<'a> = B0255<'a>;
 
-mod mint_quote_request;
-mod mint_quote_response; 
 mod mint_quote_error;
+mod mint_quote_request;
+mod mint_quote_response;
 
+pub use mint_quote_error::MintQuoteError;
 pub use mint_quote_request::MintQuoteRequest;
 pub use mint_quote_response::MintQuoteResponse;
-pub use mint_quote_error::MintQuoteError;

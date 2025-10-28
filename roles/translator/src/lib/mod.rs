@@ -11,15 +11,14 @@
 //! It relies on several sub-modules (`config`, `downstream_sv1`, `upstream_sv2`, `proxy`, `status`,
 //! etc.) for specialized functionalities.
 #![allow(clippy::module_inception)]
+use anyhow::{Context, Result};
 use async_channel::unbounded;
-use std::{net::SocketAddr, path::Path, sync::Arc, str::FromStr};
+use bip39::Mnemonic;
+use cdk::{nuts::CurrencyUnit, wallet::Wallet};
+use cdk_sqlite::WalletSqliteDatabase;
+use std::{net::SocketAddr, path::Path, str::FromStr, sync::Arc};
 use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
-use anyhow::{Result, Context};
-use bip39::Mnemonic;
-use cdk::wallet::Wallet;
-use cdk_sqlite::WalletSqliteDatabase;
-use cdk::nuts::CurrencyUnit;
 
 pub use v1::server_to_client;
 
@@ -82,7 +81,8 @@ impl TranslatorSv2 {
 
         if let Some(parent) = full_path.parent() {
             if !parent.exists() {
-                std::fs::create_dir_all(parent).expect("Failed to create parent directory for DB path");
+                std::fs::create_dir_all(parent)
+                    .expect("Failed to create parent directory for DB path");
             }
         }
 
@@ -99,7 +99,8 @@ impl TranslatorSv2 {
         let seed = Mnemonic::from_str(&mnemonic)
             .with_context(|| format!("Invalid mnemonic: '{}'", mnemonic))?
             .to_seed_normalized("");
-        let seed: [u8; 64] = seed.try_into()
+        let seed: [u8; 64] = seed
+            .try_into()
             .map_err(|_| anyhow::anyhow!("Seed must be exactly 64 bytes"))?;
         debug!("Seed derived.");
 
@@ -140,10 +141,14 @@ impl TranslatorSv2 {
 
         // Initialize and validate wallet config if mint is configured
         if self.config.mint.is_some() {
-            self.config.wallet.initialize()
+            self.config
+                .wallet
+                .initialize()
                 .expect("Failed to initialize wallet config");
 
-            let mint_url = self.config.mint
+            let mint_url = self
+                .config
+                .mint
                 .as_ref()
                 .map(|m| m.url.clone())
                 .expect("Mint URL required for wallet");
@@ -152,14 +157,17 @@ impl TranslatorSv2 {
                 mint_url,
                 self.config.wallet.mnemonic.clone(),
                 self.config.wallet.db_path.clone(),
-            ).await {
+            )
+            .await
+            {
                 Ok(wallet) => {
                     info!("Wallet initialized successfully");
                     self.wallet = Some(wallet);
                 }
                 Err(e) => {
                     error!("Failed to create wallet: {}", e);
-                    // Continue without wallet - quote functionality won't work but translator can still function
+                    // Continue without wallet - quote functionality won't work but translator can
+                    // still function
                 }
             }
         }
@@ -221,6 +229,7 @@ impl TranslatorSv2 {
             } else {
                 ChannelMode::NonAggregated
             },
+            self.wallet.clone(),
         ));
 
         let downstream_addr = SocketAddr::new(

@@ -164,6 +164,13 @@ in {
       '' "job-client.log";
     };
 
+    mint = {
+      exec = withLogging ''
+        export CDK_MINT_DB_PATH=${mintDb}
+        cargo -C roles/mint -Z unstable-options run -- -c ${config.devenv.root}/config/mint.config.toml -g ${config.devenv.root}/config/shared/pool.toml
+      '' "mint.log";
+    };
+
     proxy = {
       exec = withLogging ''
         export CDK_WALLET_DB_PATH=${config.env.TRANSLATOR_WALLET_DB}

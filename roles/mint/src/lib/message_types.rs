@@ -73,19 +73,16 @@ mod tests {
             MintMessageType::from_code(0x82),
             MintMessageType::MintQuoteError
         );
-        assert_eq!(MintMessageType::from_code(0xFF), MintMessageType::Unknown(0xFF));
+        assert_eq!(
+            MintMessageType::from_code(0xFF),
+            MintMessageType::Unknown(0xFF)
+        );
     }
 
     #[test]
     fn test_message_type_to_code() {
-        assert_eq!(
-            MintMessageType::MintQuoteRequest.to_code(),
-            Some(0x80)
-        );
-        assert_eq!(
-            MintMessageType::MintQuoteResponse.to_code(),
-            Some(0x81)
-        );
+        assert_eq!(MintMessageType::MintQuoteRequest.to_code(), Some(0x80));
+        assert_eq!(MintMessageType::MintQuoteResponse.to_code(), Some(0x81));
         assert_eq!(MintMessageType::MintQuoteError.to_code(), Some(0x82));
         assert_eq!(MintMessageType::Unknown(0xFF).to_code(), None);
     }

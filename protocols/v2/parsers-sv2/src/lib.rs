@@ -52,13 +52,12 @@ use job_declaration_sv2::{
     PushSolution,
 };
 use mining_sv2::{
-    CloseChannel, NewExtendedMiningJob, NewMiningJob, OpenExtendedMiningChannel,
-    OpenExtendedMiningChannelSuccess, OpenMiningChannelError, OpenStandardMiningChannel,
-    OpenStandardMiningChannelSuccess, SetCustomMiningJob, SetCustomMiningJobError,
-    SetCustomMiningJobSuccess, SetExtranoncePrefix, SetGroupChannel,
+    CloseChannel, MintQuoteFailure, MintQuoteNotification, NewExtendedMiningJob, NewMiningJob,
+    OpenExtendedMiningChannel, OpenExtendedMiningChannelSuccess, OpenMiningChannelError,
+    OpenStandardMiningChannel, OpenStandardMiningChannelSuccess, SetCustomMiningJob,
+    SetCustomMiningJobError, SetCustomMiningJobSuccess, SetExtranoncePrefix, SetGroupChannel,
     SetNewPrevHash as MiningSetNewPrevHash, SetTarget, SubmitSharesError, SubmitSharesExtended,
     SubmitSharesStandard, SubmitSharesSuccess, UpdateChannel, UpdateChannelError,
-    MintQuoteNotification, MintQuoteFailure,
 };
 use template_distribution_sv2::{
     CoinbaseOutputConstraints, NewTemplate, RequestTransactionData, RequestTransactionDataError,

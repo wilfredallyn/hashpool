@@ -45,7 +45,7 @@ use crate::{
     server::{
         error::ExtendedChannelError,
         jobs::{extended::ExtendedJob, factory::JobFactory, job_store::JobStore, JobOrigin},
-        share_accounting::{ShareAccounting, ShareValidationError, ShareValidationResult},
+        share_accounting::{AcceptedShare, ShareAccounting, ShareValidationError, ShareValidationResult},
     },
     target::{bytes_to_hex, hash_rate_to_target, target_to_difficulty, u256_to_block_hash},
 };
@@ -659,11 +659,13 @@ where
         );
 
         // check if a block was found
+        let share_hash = hash.to_raw_hash();
+
         if network_target.is_met_by(hash) {
             self.share_accounting.update_share_accounting(
                 target_to_difficulty(self.target.clone()) as u64,
                 share.sequence_number,
-                hash.to_raw_hash(),
+                share_hash,
             );
 
             let mut coinbase = vec![];
@@ -674,27 +676,34 @@ where
             match job.get_origin() {
                 JobOrigin::NewTemplate(template) => {
                     let template_id = template.template_id;
+                    let accepted_share = AcceptedShare::new(share_hash);
                     return Ok(ShareValidationResult::BlockFound(
+                        accepted_share,
                         Some(template_id),
                         coinbase,
                     ));
                 }
                 JobOrigin::SetCustomMiningJob(_set_custom_mining_job) => {
-                    return Ok(ShareValidationResult::BlockFound(None, coinbase));
+                    let accepted_share = AcceptedShare::new(share_hash);
+                    return Ok(ShareValidationResult::BlockFound(
+                        accepted_share,
+                        None,
+                        coinbase,
+                    ));
                 }
             }
         }
 
         // check if the share hash meets the channel target
         if hash_as_target <= self.target {
-            if self.share_accounting.is_share_seen(hash.to_raw_hash()) {
+            if self.share_accounting.is_share_seen(share_hash) {
                 return Err(ShareValidationError::DuplicateShare);
             }
 
             self.share_accounting.update_share_accounting(
                 target_to_difficulty(self.target.clone()) as u64,
                 share.sequence_number,
-                hash.to_raw_hash(),
+                share_hash,
             );
 
             // update the best diff
@@ -703,17 +712,19 @@ where
             let last_sequence_number = self.share_accounting.get_last_share_sequence_number();
             let new_submits_accepted_count = self.share_accounting.get_shares_accepted();
             let new_shares_sum = self.share_accounting.get_share_work_sum();
+            let accepted_share = AcceptedShare::new(share_hash);
 
             // if sequence number is a multiple of share_batch_size
             // it's time to send a SubmitShares.Success
             if self.share_accounting.should_acknowledge() {
                 Ok(ShareValidationResult::ValidWithAcknowledgement(
+                    accepted_share,
                     last_sequence_number,
                     new_submits_accepted_count,
                     new_shares_sum,
                 ))
             } else {
-                Ok(ShareValidationResult::Valid)
+                Ok(ShareValidationResult::Valid(accepted_share))
             }
         } else {
             Err(ShareValidationError::DoesNotMeetTarget)
@@ -733,7 +744,7 @@ mod tests {
         },
     };
     use binary_sv2::Sv2Option;
-    use bitcoin::{transaction::TxOut, Amount, ScriptBuf};
+    use bitcoin::{hashes::hex::FromHex, transaction::TxOut, Amount, ScriptBuf};
     use mining_sv2::{NewExtendedMiningJob, SubmitSharesExtended, Target, MAX_EXTRANONCE_LEN};
     use std::convert::TryInto;
     use template_distribution_sv2::{NewTemplate, SetNewPrevHash};
@@ -1195,7 +1206,10 @@ mod tests {
 
         let res = channel.validate_share(share_valid_block);
 
-        assert!(matches!(res, Ok(ShareValidationResult::BlockFound(_, _))));
+        assert!(matches!(
+            res,
+            Ok(ShareValidationResult::BlockFound(_, Some(_), _))
+        ));
     }
 
     #[test]
@@ -1419,8 +1433,18 @@ mod tests {
             extranonce: vec![1, 0, 0, 0, 0].try_into().unwrap(),
         };
 
-        let res = channel.validate_share(valid_share);
-        assert!(matches!(res, Ok(ShareValidationResult::Valid)));
+        let res = channel
+            .validate_share(valid_share)
+            .expect("share should validate successfully");
+        let ShareValidationResult::Valid(accepted_share) = res else {
+            panic!("expected valid share result");
+        };
+
+        let expected_hash = <[u8; 32]>::from_hex(
+            "00003126092fcbc15f05fbdf7e38dd468249e4e473fb5286caba164d8206f7f4",
+        )
+        .unwrap();
+        assert_eq!(accepted_share.header_hash_bytes(), expected_hash);
 
         // try to cheat by re-submitting the same share
         // with a different sequence number

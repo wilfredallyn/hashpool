@@ -1,6 +1,8 @@
-use std::sync::RwLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 use stats::stats_adapter::ProxySnapshot;
+use std::{
+    sync::RwLock,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 pub struct StatsData {
     snapshot: RwLock<Option<ProxySnapshot>>,

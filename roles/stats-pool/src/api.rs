@@ -1,15 +1,13 @@
-use std::convert::Infallible;
-use std::sync::Arc;
-use hyper::body::Incoming;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::{Method, Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
+use bytes::Bytes;
 use http_body_util::Full;
+use hyper::{
+    body::Incoming, server::conn::http1, service::service_fn, Method, Request, Response, StatusCode,
+};
+use hyper_util::rt::TokioIo;
+use serde_json::json;
+use std::{convert::Infallible, sync::Arc};
 use tokio::net::TcpListener;
 use tracing::{error, info};
-use bytes::Bytes;
-use serde_json::json;
 
 use stats_pool::db::StatsData;
 
@@ -71,53 +69,49 @@ async fn serve_stats_json(stats: Arc<StatsData>) -> Response<Full<Bytes>> {
                 .body(Full::new(Bytes::from(json)))
                 .unwrap()
         }
-        None => {
-            Response::builder()
-                .status(StatusCode::SERVICE_UNAVAILABLE)
-                .header("Content-Type", "application/json")
-                .body(Full::new(Bytes::from(r#"{"error":"no data available"}"#)))
-                .unwrap()
-        }
+        None => Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .header("Content-Type", "application/json")
+            .body(Full::new(Bytes::from(r#"{"error":"no data available"}"#)))
+            .unwrap(),
     }
 }
 
 async fn serve_services_json(stats: Arc<StatsData>) -> Response<Full<Bytes>> {
     match stats.get_latest_snapshot() {
         Some(snapshot) => {
-            let json = serde_json::to_string(&snapshot.services).unwrap_or_else(|_| "[]".to_string());
+            let json =
+                serde_json::to_string(&snapshot.services).unwrap_or_else(|_| "[]".to_string());
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
                 .body(Full::new(Bytes::from(json)))
                 .unwrap()
         }
-        None => {
-            Response::builder()
-                .status(StatusCode::SERVICE_UNAVAILABLE)
-                .header("Content-Type", "application/json")
-                .body(Full::new(Bytes::from("[]")))
-                .unwrap()
-        }
+        None => Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .header("Content-Type", "application/json")
+            .body(Full::new(Bytes::from("[]")))
+            .unwrap(),
     }
 }
 
 async fn serve_connections_json(stats: Arc<StatsData>) -> Response<Full<Bytes>> {
     match stats.get_latest_snapshot() {
         Some(snapshot) => {
-            let json = serde_json::to_string(&snapshot.downstream_proxies).unwrap_or_else(|_| "[]".to_string());
+            let json = serde_json::to_string(&snapshot.downstream_proxies)
+                .unwrap_or_else(|_| "[]".to_string());
             Response::builder()
                 .status(StatusCode::OK)
                 .header("Content-Type", "application/json")
                 .body(Full::new(Bytes::from(json)))
                 .unwrap()
         }
-        None => {
-            Response::builder()
-                .status(StatusCode::SERVICE_UNAVAILABLE)
-                .header("Content-Type", "application/json")
-                .body(Full::new(Bytes::from("[]")))
-                .unwrap()
-        }
+        None => Response::builder()
+            .status(StatusCode::SERVICE_UNAVAILABLE)
+            .header("Content-Type", "application/json")
+            .body(Full::new(Bytes::from("[]")))
+            .unwrap(),
     }
 }
 

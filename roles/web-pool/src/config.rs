@@ -1,6 +1,5 @@
-use std::env;
-use std::fs;
 use serde::Deserialize;
+use std::{env, fs};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -75,8 +74,7 @@ impl Config {
             .map(|s| s.as_str())
             .unwrap_or("config/web-pool.config.toml");
 
-        let web_pool_config_str = fs::read_to_string(web_pool_config_path)
-            .unwrap_or_default();
+        let web_pool_config_str = fs::read_to_string(web_pool_config_path).unwrap_or_default();
         let web_pool_config: WebPoolConfig = if web_pool_config_str.is_empty() {
             WebPoolConfig {
                 server: ServerConfig::default(),
@@ -133,8 +131,14 @@ impl Config {
             web_server_address,
             stats_poll_interval_secs,
             client_poll_interval_secs,
-            request_timeout_secs: web_pool_config.http_client.request_timeout_secs.unwrap_or(60),
-            pool_idle_timeout_secs: web_pool_config.http_client.pool_idle_timeout_secs.unwrap_or(300),
+            request_timeout_secs: web_pool_config
+                .http_client
+                .request_timeout_secs
+                .unwrap_or(60),
+            pool_idle_timeout_secs: web_pool_config
+                .http_client
+                .pool_idle_timeout_secs
+                .unwrap_or(300),
         })
     }
 }
@@ -157,8 +161,14 @@ mod tests {
             request_timeout_secs = 100
         "#;
         let config: WebPoolConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.server.listen_address, Some("127.0.0.1:7070".to_string()));
-        assert_eq!(config.stats_pool.url, Some("http://custom-stats:9084".to_string()));
+        assert_eq!(
+            config.server.listen_address,
+            Some("127.0.0.1:7070".to_string())
+        );
+        assert_eq!(
+            config.stats_pool.url,
+            Some("http://custom-stats:9084".to_string())
+        );
         assert_eq!(config.http_client.pool_idle_timeout_secs, Some(500));
         assert_eq!(config.http_client.request_timeout_secs, Some(100));
     }

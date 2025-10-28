@@ -1,15 +1,16 @@
-use std::convert::Infallible;
-use std::sync::{Arc, OnceLock};
-use hyper::body::Incoming;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::{Method, Request, Response, StatusCode};
-use hyper_util::rt::TokioIo;
+use bytes::Bytes;
 use http_body_util::Full;
+use hyper::{
+    body::Incoming, server::conn::http1, service::service_fn, Method, Request, Response, StatusCode,
+};
+use hyper_util::rt::TokioIo;
+use serde_json::json;
+use std::{
+    convert::Infallible,
+    sync::{Arc, OnceLock},
+};
 use tokio::net::TcpListener;
 use tracing::{error, info};
-use bytes::Bytes;
-use serde_json::json;
 
 use crate::SnapshotStorage;
 use web_assets::icons::{nav_icon_css, pickaxe_favicon_inline_svg};
@@ -91,21 +92,19 @@ async fn handle_request(
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     let response = match (req.method(), req.uri().path()) {
         (&Method::GET, "/favicon.ico") | (&Method::GET, "/favicon.svg") => Ok(serve_favicon()),
-        (&Method::GET, "/") => {
-            Response::builder()
-                .header("content-type", "text/html; charset=utf-8")
-                .body(Full::new(wallet_page(faucet_enabled)))
-        }
-        (&Method::GET, "/miners") => {
-            Response::builder()
-                .header("content-type", "text/html; charset=utf-8")
-                .body(Full::new(miners_page(downstream_address, downstream_port)))
-        }
-        (&Method::GET, "/pool") => {
-            Response::builder()
-                .header("content-type", "text/html; charset=utf-8")
-                .body(Full::new(pool_page(upstream_address, upstream_port, client_poll_interval_secs)))
-        }
+        (&Method::GET, "/") => Response::builder()
+            .header("content-type", "text/html; charset=utf-8")
+            .body(Full::new(wallet_page(faucet_enabled))),
+        (&Method::GET, "/miners") => Response::builder()
+            .header("content-type", "text/html; charset=utf-8")
+            .body(Full::new(miners_page(downstream_address, downstream_port))),
+        (&Method::GET, "/pool") => Response::builder()
+            .header("content-type", "text/html; charset=utf-8")
+            .body(Full::new(pool_page(
+                upstream_address,
+                upstream_port,
+                client_poll_interval_secs,
+            ))),
         (&Method::GET, "/api/miners") => {
             let stats = get_miner_stats(storage).await;
             Response::builder()
@@ -145,14 +144,10 @@ async fn handle_request(
                 .header("content-type", "application/json")
                 .body(Full::new(Bytes::from(json_response.to_string())))
         }
-        (&Method::POST, "/mint/tokens") => {
-            proxy_mint_request(faucet_enabled, faucet_url).await
-        }
-        _ => {
-            Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(Full::new(Bytes::from("Not Found")))
-        }
+        (&Method::POST, "/mint/tokens") => proxy_mint_request(faucet_enabled, faucet_url).await,
+        _ => Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Full::new(Bytes::from("Not Found"))),
     };
 
     Ok(response.unwrap_or_else(|_| {
@@ -178,7 +173,10 @@ fn wallet_page(faucet_enabled: bool) -> Bytes {
 
     let html = if !faucet_enabled {
         // Remove mint button if faucet is disabled
-        html.replace(r#"<button class="mint-button" id="drip-btn" onclick="requestDrip()">Mint</button>"#, "")
+        html.replace(
+            r#"<button class="mint-button" id="drip-btn" onclick="requestDrip()">Mint</button>"#,
+            "",
+        )
     } else {
         html
     };
@@ -187,9 +185,8 @@ fn wallet_page(faucet_enabled: bool) -> Bytes {
 }
 
 fn miners_page(downstream_address: &str, downstream_port: u16) -> Bytes {
-    let html = MINERS_PAGE_HTML.get_or_init(|| {
-        MINERS_PAGE_TEMPLATE.replace("/* {{NAV_ICON_CSS}} */", nav_icon_css())
-    });
+    let html = MINERS_PAGE_HTML
+        .get_or_init(|| MINERS_PAGE_TEMPLATE.replace("/* {{NAV_ICON_CSS}} */", nav_icon_css()));
 
     let formatted_html = html
         .replace("{downstream_address}", downstream_address)
@@ -207,7 +204,10 @@ fn pool_page(upstream_address: &str, upstream_port: u16, client_poll_interval_se
     let formatted_html = html
         .replace("{upstream_address}", upstream_address)
         .replace("{upstream_port}", &upstream_port.to_string())
-        .replace("{client_poll_interval_ms}", &client_poll_interval_ms.to_string());
+        .replace(
+            "{client_poll_interval_ms}",
+            &client_poll_interval_ms.to_string(),
+        );
 
     Bytes::from(formatted_html)
 }
@@ -330,7 +330,9 @@ async fn proxy_mint_request(
         return Response::builder()
             .status(StatusCode::INTERNAL_SERVER_ERROR)
             .header("content-type", "application/json")
-            .body(Full::new(Bytes::from(r#"{"error":"Faucet URL not configured"}"#)));
+            .body(Full::new(Bytes::from(
+                r#"{"error":"Faucet URL not configured"}"#,
+            )));
     };
 
     // Proxy mint request to translator's faucet API

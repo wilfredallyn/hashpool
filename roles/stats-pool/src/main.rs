@@ -1,15 +1,15 @@
-use std::net::SocketAddr;
-use std::sync::Arc;
-use tokio::io::AsyncReadExt;
-use tokio::net::{TcpListener, TcpStream};
+use std::{net::SocketAddr, sync::Arc};
+use tokio::{
+    io::AsyncReadExt,
+    net::{TcpListener, TcpStream},
+};
 use tracing::{error, info};
 
-mod config;
 mod api;
+mod config;
 
 use config::Config;
-use stats_pool::db::StatsData;
-use stats_pool::stats_handler::StatsHandler;
+use stats_pool::{db::StatsData, stats_handler::StatsHandler};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

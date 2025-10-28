@@ -25,7 +25,7 @@ async fn main() {
     };
     init_logging(config.log_file());
     match JobDeclaratorServer::new(config).start().await {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
             error!("Job Declarator Server error: {:?}", e);
             eprintln!("Job Declarator Server error: {:?}", e);

@@ -8,9 +8,9 @@
 //! Using the binary_sv2 codec infrastructure
 
 use anyhow::Result;
-use binary_sv2::{Encodable, GetSize, EncodableField};
+use binary_sv2::{Encodable, EncodableField, GetSize};
 use codec_sv2::StandardSv2Frame;
-use mint_quote_sv2::{MintQuoteResponse, MintQuoteError, MintQuoteRequest};
+use mint_quote_sv2::{MintQuoteError, MintQuoteRequest, MintQuoteResponse};
 use tracing::info;
 
 /// Message wrapper enum for all mint-pool messages
@@ -57,14 +57,19 @@ pub mod frame_types {
 pub fn encode_mint_quote_response(response: &MintQuoteResponse<'_>) -> Result<Vec<u8>> {
     // Encode using MintQuoteResponse's Encodable trait
     let mut buffer = Vec::new();
-    response.clone().to_bytes(&mut buffer)
+    response
+        .clone()
+        .to_bytes(&mut buffer)
         .map_err(|e| anyhow::anyhow!("Failed to encode MintQuoteResponse: {:?}", e))?;
 
     // Prepend message type byte (0x81)
     let mut frame_bytes = vec![frame_types::MINT_QUOTE_RESPONSE];
     frame_bytes.extend_from_slice(&buffer);
 
-    info!("Encoded MintQuoteResponse frame ({} bytes)", frame_bytes.len());
+    info!(
+        "Encoded MintQuoteResponse frame ({} bytes)",
+        frame_bytes.len()
+    );
     Ok(frame_bytes)
 }
 

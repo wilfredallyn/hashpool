@@ -319,12 +319,15 @@ pub struct MessageHubStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use binary_sv2::{CompressedPubKey, Deserialize, Str0255};
+    use binary_sv2::{Deserialize, Str0255};
 
     fn locking_key() -> CompressedPubKey<'static> {
         let mut bytes = [0u8; 33];
         bytes[0] = 0x02;
-        CompressedPubKey::from_bytes(&mut bytes)
+        let mut encoded = [0u8; 34];
+        encoded[0] = bytes.len() as u8;
+        encoded[1..].copy_from_slice(&bytes);
+        CompressedPubKey::from_bytes(&mut encoded[..])
             .expect("valid compressed key")
             .into_static()
     }

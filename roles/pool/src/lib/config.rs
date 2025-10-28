@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use config_helpers_sv2::CoinbaseRewardScript;
 use key_utils::{Secp256k1PublicKey, Secp256k1SecretKey};
+use shared_config::Sv2MessagingConfig;
 
 /// Configuration for the Pool, including connection, authority, and coinbase settings.
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -28,6 +29,14 @@ pub struct PoolConfig {
     share_batch_size: usize,
     log_file: Option<PathBuf>,
     server_id: u16,
+    #[serde(default)]
+    locking_pubkey: Option<String>,
+    #[serde(skip)]
+    sv2_messaging: Option<Sv2MessagingConfig>,
+    #[serde(skip)]
+    minimum_difficulty: Option<u32>,
+    #[serde(skip)]
+    mint_http_url: Option<String>,
 }
 
 impl PoolConfig {
@@ -58,6 +67,10 @@ impl PoolConfig {
             share_batch_size,
             log_file: None,
             server_id,
+            locking_pubkey: None,
+            sv2_messaging: None,
+            minimum_difficulty: None,
+            mint_http_url: None,
         }
     }
 
@@ -135,6 +148,46 @@ impl PoolConfig {
     /// Returns the server id.
     pub fn server_id(&self) -> u16 {
         self.server_id
+    }
+
+    /// Returns the locking pubkey (compressed public key as hex string for quote attribution).
+    pub fn locking_pubkey(&self) -> Option<&str> {
+        self.locking_pubkey.as_deref()
+    }
+
+    /// Sets the locking pubkey (from global config or other sources).
+    pub fn set_locking_pubkey(&mut self, pubkey: String) {
+        self.locking_pubkey = Some(pubkey);
+    }
+
+    /// Returns an optional SV2 messaging configuration loaded from shared config.
+    pub fn sv2_messaging(&self) -> Option<&Sv2MessagingConfig> {
+        self.sv2_messaging.as_ref()
+    }
+
+    /// Sets the SV2 messaging configuration (from shared config).
+    pub fn set_sv2_messaging(&mut self, messaging: Option<Sv2MessagingConfig>) {
+        self.sv2_messaging = messaging;
+    }
+
+    /// Returns the optional minimum ehash difficulty override.
+    pub fn minimum_difficulty(&self) -> Option<u32> {
+        self.minimum_difficulty
+    }
+
+    /// Sets the minimum difficulty override (from shared config).
+    pub fn set_minimum_difficulty(&mut self, minimum_difficulty: Option<u32>) {
+        self.minimum_difficulty = minimum_difficulty;
+    }
+
+    /// Returns the optional mint HTTP endpoint used by the quote poller.
+    pub fn mint_http_url(&self) -> Option<&str> {
+        self.mint_http_url.as_deref()
+    }
+
+    /// Sets the mint HTTP endpoint used by the quote poller.
+    pub fn set_mint_http_url(&mut self, mint_http_url: Option<String>) {
+        self.mint_http_url = mint_http_url;
     }
 }
 

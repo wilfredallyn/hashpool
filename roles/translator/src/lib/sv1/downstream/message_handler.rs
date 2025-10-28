@@ -61,7 +61,7 @@ impl IsServer<'static> for DownstreamData {
 
     fn handle_submit(&self, request: &client_to_server::Submit<'static>) -> bool {
         if let Some(channel_id) = self.channel_id {
-            info!(
+            debug!(
                 "Received mining.submit from SV1 downstream for channel id: {}",
                 channel_id
             );

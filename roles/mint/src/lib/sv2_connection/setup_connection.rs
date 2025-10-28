@@ -65,9 +65,7 @@ pub fn build_mint_setup_connection<'a>(
 
     info!(
         "✅ Built SetupConnection: protocol={:?}, host={}, port={}",
-        setup_connection.protocol,
-        host_bytes,
-        endpoint_port
+        setup_connection.protocol, host_bytes, endpoint_port
     );
 
     Ok(setup_connection)

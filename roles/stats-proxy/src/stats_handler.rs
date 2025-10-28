@@ -1,6 +1,6 @@
+use stats::stats_adapter::ProxySnapshot;
 use std::sync::Arc;
 use tracing::debug;
-use stats::stats_adapter::ProxySnapshot;
 
 use crate::db::StatsData;
 

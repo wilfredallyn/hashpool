@@ -3,8 +3,8 @@
 //! This crate provides the core messaging infrastructure for communication
 //! between mining pools and mint services using SV2 messages over MPSC channels.
 
-use std::sync::Arc;
-use std::convert::TryFrom;
+use binary_sv2;
+use std::{convert::TryFrom, sync::Arc};
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
@@ -14,7 +14,7 @@ pub use ehash::{
     ParsedMintQuoteRequest, QuoteBuildError, QuoteConversionError, QuoteParseError, ShareHash,
     ShareHashError,
 };
-pub use mint_quote_sv2::{MintQuoteError, MintQuoteRequest, MintQuoteResponse};
+pub use mint_quote_sv2::{CompressedPubKey, MintQuoteError, MintQuoteRequest, MintQuoteResponse};
 
 /// Role identifier for connections
 #[derive(Debug, Clone, PartialEq)]
@@ -26,11 +26,15 @@ pub enum Role {
 mod channel_manager;
 mod message_codec;
 mod message_hub;
+mod sv2_frames;
 
 pub use channel_manager::{ChannelError, ChannelManager};
 pub use message_codec::{MessageCodec, MessageType, MintQuoteMessage};
 pub use message_hub::{
     MessageHubStats, MintPoolMessageHub, MintQuoteResponseEvent, PendingQuoteContext,
+};
+pub use sv2_frames::{
+    quote_error_frame_bytes, quote_request_frame_bytes, quote_response_frame_bytes,
 };
 
 /// Configuration for the messaging system

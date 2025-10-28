@@ -33,8 +33,16 @@ key-utils = { path = "../../utils/key-utils" }
 config_helpers_sv2 = { path = "../roles-utils/config-helpers" }
 clap = { version = "4.5.39", features = ["derive"] }
 mint_pool_messaging = { path = "../roles-utils/mint-pool-messaging" }
+quote-dispatcher = { path = "../roles-utils/quote-dispatcher" }
 reqwest = { version = "0.11", features = ["json"] }
+sha2 = "0.10"
+binary_sv2 = { path = "../../protocols/v2/binary-sv2" }
+hex = "0.4.3"
+ehash = { path = "../../protocols/ehash" }
+shared_config = { path = "../roles-utils/config" }
+mint_quote_sv2 = { path = "../../protocols/v2/subprotocols/mint-quote" }
+const_sv2 = { path = "../../protocols/v2/const-sv2" }
+serde_json = "1"
 
 [dev-dependencies]
-hex = "0.4.3"
 integration_tests_sv2 = { path = "../../test/integration-tests" }

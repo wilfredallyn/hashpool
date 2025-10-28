@@ -18,38 +18,57 @@
 //! Intended for use within mining server implementations that process SV2 share submissions and
 //! issue `SubmitShares.Success` messages. Not intended for use by mining clients.
 
-use bitcoin::hashes::sha256d::Hash;
+use bitcoin::hashes::{sha256d::Hash, Hash as _};
 use std::collections::HashSet;
 
 /// The outcome of share validation, from the perspective of a Mining Server.
 ///
-/// The [`ShareValidationResult::ValidWithAcknowledgement`] variant carries:
-/// - `last_sequence_number` (as `u32`)
-/// - `new_submits_accepted_count` (as `u32`)
-/// - `new_shares_sum` (as `u64`)
+/// Each successful result includes an [`AcceptedShare`] which exposes the
+/// validated share hash. This allows downstream components to retrieve the
+/// header hash without relying on mutable accounting state.
 ///
-/// which are used to craft `SubmitShares.Success` Sv2 messages.
+/// The [`ShareValidationResult::ValidWithAcknowledgement`] variant additionally
+/// carries batch accounting metadata used to craft `SubmitShares.Success`
+/// messages.
 ///
-/// The [`ShareValidationResult::BlockFound`] variant carries:
-/// - `template_id` (as `Option<u64>`)
-/// - `coinbase` (as `Vec<u8>`)
-///
-/// where `template_id` is `None` if the share is for a custom job.
+/// The [`ShareValidationResult::BlockFound`] variant includes the optional
+/// `template_id` (present for non-custom jobs) and the serialized coinbase
+/// transaction for propagation upstream.
+#[derive(Debug, Clone, Copy)]
+pub struct AcceptedShare {
+    hash: Hash,
+}
+
+impl AcceptedShare {
+    /// Create a new `AcceptedShare` from the provided hash.
+    pub fn new(hash: Hash) -> Self {
+        Self { hash }
+    }
+
+    /// Returns the raw share hash (`sha256d`).
+    pub fn hash(&self) -> Hash {
+        self.hash
+    }
+
+    /// Returns the header hash bytes in big-endian order (suitable for difficulty checks).
+    pub fn header_hash_bytes(&self) -> [u8; 32] {
+        let mut bytes = self.hash.to_byte_array();
+        bytes.reverse();
+        bytes
+    }
+}
+
+/// The outcome of share validation, from the perspective of a Mining Server.
 #[derive(Debug)]
 pub enum ShareValidationResult {
     /// The share is valid and accepted.
-    Valid,
+    Valid(AcceptedShare),
     /// The share is valid and triggers a batch acknowledgment.
-    /// Contains:
-    /// - `last_sequence_number`: The sequence number of the last accepted share in the batch.
-    /// - `new_submits_accepted_count`: The number of new shares accepted in this batch.
-    /// - `new_shares_sum`: The total work contributed by shares in this batch.
-    ValidWithAcknowledgement(u32, u32, u64),
+    /// Contains the accepted share plus batch metadata.
+    ValidWithAcknowledgement(AcceptedShare, u32, u32, u64),
     /// The share solves a block.
-    /// Contains:
-    /// - `template_id`: The template ID associated with the job, or `None` for custom jobs.
-    /// - `coinbase`: The serialized coinbase transaction for the block.
-    BlockFound(Option<u64>, Vec<u8>),
+    /// Contains the accepted share, template ID, and serialized coinbase transaction.
+    BlockFound(AcceptedShare, Option<u64>, Vec<u8>),
 }
 
 /// The error variants that can occur during share validation.

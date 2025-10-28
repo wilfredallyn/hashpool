@@ -1,6 +1,5 @@
-use std::env;
-use std::fs;
 use serde::Deserialize;
+use std::{env, fs};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -76,8 +75,7 @@ impl Config {
             .map(|s| s.as_str())
             .unwrap_or("config/stats-pool.config.toml");
 
-        let stats_pool_config_str = fs::read_to_string(stats_pool_config_path)
-            .unwrap_or_default();
+        let stats_pool_config_str = fs::read_to_string(stats_pool_config_path).unwrap_or_default();
         let stats_pool_config: StatsPoolConfig = if stats_pool_config_str.is_empty() {
             StatsPoolConfig {
                 server: ServerConfig::default(),
@@ -108,9 +106,18 @@ impl Config {
         Ok(Config {
             tcp_address,
             http_address,
-            staleness_threshold_secs: stats_pool_config.snapshot_storage.staleness_threshold_secs.unwrap_or(15),
-            request_timeout_secs: stats_pool_config.http_client.request_timeout_secs.unwrap_or(60),
-            pool_idle_timeout_secs: stats_pool_config.http_client.pool_idle_timeout_secs.unwrap_or(300),
+            staleness_threshold_secs: stats_pool_config
+                .snapshot_storage
+                .staleness_threshold_secs
+                .unwrap_or(15),
+            request_timeout_secs: stats_pool_config
+                .http_client
+                .request_timeout_secs
+                .unwrap_or(60),
+            pool_idle_timeout_secs: stats_pool_config
+                .http_client
+                .pool_idle_timeout_secs
+                .unwrap_or(300),
         })
     }
 }
@@ -134,8 +141,14 @@ mod tests {
             request_timeout_secs = 80
         "#;
         let config: StatsPoolConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.server.tcp_listen_address, Some("127.0.0.1:5555".to_string()));
-        assert_eq!(config.server.http_listen_address, Some("127.0.0.1:6666".to_string()));
+        assert_eq!(
+            config.server.tcp_listen_address,
+            Some("127.0.0.1:5555".to_string())
+        );
+        assert_eq!(
+            config.server.http_listen_address,
+            Some("127.0.0.1:6666".to_string())
+        );
         assert_eq!(config.snapshot_storage.staleness_threshold_secs, Some(20));
         assert_eq!(config.http_client.pool_idle_timeout_secs, Some(400));
         assert_eq!(config.http_client.request_timeout_secs, Some(80));

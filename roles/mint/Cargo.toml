@@ -39,4 +39,5 @@ mint_quote_sv2 = { path = "../../protocols/v2/subprotocols/mint-quote" }
 const_sv2 = { path = "../../protocols/v2/const-sv2" }
 common_messages_sv2 = { path = "../../protocols/v2/subprotocols/common-messages" }
 ehash = { path = "../../protocols/ehash" }
+key-utils = { path = "../../utils/key-utils" }
 async-channel = "1.8.0"

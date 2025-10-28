@@ -5,7 +5,10 @@
 //! This module defines how the pool logic (specifically, a `Downstream` connection instance)
 //! reacts to various mining-related messages received from a connected downstream miner.
 
-use super::super::mining_pool::{Downstream, ShareQuoteRequest};
+use super::super::mining_pool::Downstream;
+use binary_sv2::Deserialize;
+use mint_quote_sv2::CompressedPubKey;
+use quote_dispatcher::QuoteDispatcher;
 use std::{
     convert::TryInto,
     sync::{Arc, RwLock},
@@ -29,7 +32,75 @@ use stratum_common::roles_logic_sv2::{
     utils::Mutex,
     Vardiff, VardiffState,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
+
+fn dispatch_quote(
+    dispatcher: Arc<QuoteDispatcher>,
+    mint_manager: Arc<super::mint_integration::MintIntegrationManager>,
+    channel_id: u32,
+    sequence_number: u32,
+    header_hash: [u8; 32],
+    locking_key_hint: Option<Vec<u8>>,
+) {
+    let header_hash_bytes = header_hash;
+    tokio::spawn(async move {
+        let locking_key_bytes = if let Some(bytes) = locking_key_hint {
+            Some(bytes)
+        } else {
+            mint_manager
+                .get_channel_context(channel_id)
+                .await
+                .and_then(|ctx| ctx.locking_key_bytes.clone())
+        };
+
+        let Some(bytes) = locking_key_bytes else {
+            debug!(
+                "Skipping quote creation: missing locking key for channel {}",
+                channel_id
+            );
+            return;
+        };
+
+        if bytes.len() != 33 {
+            warn!(
+                "Invalid locking key length ({} bytes) for channel {}",
+                bytes.len(),
+                channel_id
+            );
+            return;
+        }
+
+        let mut key_bytes = [0u8; 33];
+        key_bytes.copy_from_slice(&bytes);
+        let mut encoded = [0u8; 34];
+        encoded[0] = key_bytes.len() as u8;
+        encoded[1..].copy_from_slice(&key_bytes);
+        let pubkey = match CompressedPubKey::from_bytes(&mut encoded[..]) {
+            Ok(key) => key.into_static(),
+            Err(e) => {
+                error!(
+                    "Failed to parse locking key for channel {}: {:?}",
+                    channel_id, e
+                );
+                return;
+            }
+        };
+
+        if let Err(e) =
+            dispatcher.submit_quote(&header_hash_bytes, pubkey, channel_id, sequence_number)
+        {
+            error!(
+                "Failed to dispatch mint quote for channel {} seq {}: {}",
+                channel_id, sequence_number, e
+            );
+        } else {
+            debug!(
+                "Queued mint quote via dispatcher: channel={}, seq={}",
+                channel_id, sequence_number
+            );
+        }
+    });
+}
 
 /// Helper function to send a quote request for an accepted share.
 ///
@@ -39,23 +110,23 @@ fn send_share_quote_request(
     downstream: &Downstream,
     channel_id: u32,
     sequence_number: u32,
-    m: &SubmitSharesStandard,
+    header_hash: [u8; 32],
+    _m: &SubmitSharesStandard,
 ) {
-    if let Some(ref sender) = downstream.quote_dispatcher_sender {
-        let quote_request = ShareQuoteRequest {
+    if let Some(dispatcher) = downstream.quote_dispatcher.clone() {
+        dispatch_quote(
+            dispatcher,
+            downstream.mint_manager.clone(),
             channel_id,
             sequence_number,
-            // Note: header_hash would be computed from the job template + mining work
-            // For now, we store an empty vec - the dispatcher will handle quote creation
-            // using the nonce/ntime/version and job context
-            header_hash: vec![],
-            block_version: m.version,
-            block_timestamp: m.ntime,
-            block_nonce: m.nonce,
-        };
-        if let Err(e) = sender.try_send(quote_request) {
-            debug!("Failed to queue quote request for share (channel: {}, seq: {}): {}", channel_id, sequence_number, e);
-        }
+            header_hash,
+            downstream.locking_key_bytes.clone(),
+        );
+    } else {
+        debug!(
+            "Quote dispatcher not configured; skipping quote for channel {}",
+            channel_id
+        );
     }
 }
 
@@ -66,23 +137,23 @@ fn send_extended_share_quote_request(
     downstream: &Downstream,
     channel_id: u32,
     sequence_number: u32,
-    m: &SubmitSharesExtended,
+    header_hash: [u8; 32],
+    _m: &SubmitSharesExtended,
 ) {
-    if let Some(ref sender) = downstream.quote_dispatcher_sender {
-        let quote_request = ShareQuoteRequest {
+    if let Some(dispatcher) = downstream.quote_dispatcher.clone() {
+        dispatch_quote(
+            dispatcher,
+            downstream.mint_manager.clone(),
             channel_id,
             sequence_number,
-            // Note: header_hash would be computed from the job template + mining work
-            // For now, we store an empty vec - the dispatcher will handle quote creation
-            // using the nonce/ntime/version and job context
-            header_hash: vec![],
-            block_version: m.version,
-            block_timestamp: m.ntime,
-            block_nonce: m.nonce,
-        };
-        if let Err(e) = sender.try_send(quote_request) {
-            debug!("Failed to queue quote request for extended share (channel: {}, seq: {}): {}", channel_id, sequence_number, e);
-        }
+            header_hash,
+            downstream.locking_key_bytes.clone(),
+        );
+    } else {
+        debug!(
+            "Quote dispatcher not configured; skipping extended quote for channel {}",
+            channel_id
+        );
     }
 }
 
@@ -261,6 +332,25 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
         messages.push(Mining::OpenStandardMiningChannelSuccess(
             open_standard_mining_channel_success,
         ));
+
+        if let Some(locking_key) = self.locking_key_bytes.clone() {
+            let mint_manager = self.mint_manager.clone();
+            let downstream_id = self.id;
+            tokio::spawn(async move {
+                mint_manager
+                    .register_channel(channel_id, Some(locking_key), downstream_id)
+                    .await;
+                info!(
+                    "Registered standard channel {} with mint manager (downstream={})",
+                    channel_id, downstream_id
+                );
+            });
+        } else {
+            debug!(
+                "Skipping mint registration for standard channel {} (missing locking key)",
+                channel_id
+            );
+        }
 
         // create a future standard job based on the last future template
         standard_channel
@@ -448,6 +538,25 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
         messages.push(Mining::OpenExtendedMiningChannelSuccess(
             open_extended_mining_channel_success,
         ));
+
+        if let Some(locking_key) = self.locking_key_bytes.clone() {
+            let mint_manager = self.mint_manager.clone();
+            let downstream_id = self.id;
+            tokio::spawn(async move {
+                mint_manager
+                    .register_channel(channel_id, Some(locking_key), downstream_id)
+                    .await;
+                info!(
+                    "Registered extended channel {} with mint manager (downstream={})",
+                    channel_id, downstream_id
+                );
+            });
+        } else {
+            debug!(
+                "Skipping mint registration for extended channel {} (missing locking key)",
+                channel_id
+            );
+        }
 
         let last_set_new_prev_hash_tdp = self.last_new_prev_hash.clone();
 
@@ -704,22 +813,23 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
         let res = standard_channel.validate_share(m.clone());
         vardiff.increment_shares_since_last_update();
         match res {
-            Ok(ShareValidationResult::Valid) => {
+            Ok(ShareValidationResult::Valid(accepted_share)) => {
                 info!(
                     "SubmitSharesStandard: valid share | channel_id: {}, sequence_number: {} ☑️",
                     channel_id, m.sequence_number
                 );
-                // Create a quote for this accepted share
-                send_share_quote_request(self, channel_id, m.sequence_number, &m);
+                let header_hash = accepted_share.header_hash_bytes();
+                send_share_quote_request(self, channel_id, m.sequence_number, header_hash, &m);
                 Ok(SendTo::None(None))
             }
             Ok(ShareValidationResult::ValidWithAcknowledgement(
+                accepted_share,
                 last_sequence_number,
                 new_submits_accepted_count,
                 new_shares_sum,
             )) => {
-                // Create a quote for this accepted share
-                send_share_quote_request(self, channel_id, m.sequence_number, &m);
+                let header_hash = accepted_share.header_hash_bytes();
+                send_share_quote_request(self, channel_id, m.sequence_number, header_hash, &m);
                 let success = SubmitSharesSuccess {
                     channel_id,
                     last_sequence_number,
@@ -729,10 +839,10 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
                 info!("SubmitSharesStandard: {} ✅", success);
                 Ok(SendTo::Respond(Mining::SubmitSharesSuccess(success)))
             }
-            Ok(ShareValidationResult::BlockFound(template_id, coinbase)) => {
+            Ok(ShareValidationResult::BlockFound(accepted_share, template_id, coinbase)) => {
                 info!("SubmitSharesStandard: 💰 Block Found!!! 💰");
-                // Create a quote for this accepted block (which is also a share)
-                send_share_quote_request(self, channel_id, m.sequence_number, &m);
+                let header_hash = accepted_share.header_hash_bytes();
+                send_share_quote_request(self, channel_id, m.sequence_number, header_hash, &m);
                 // if we have a template id (i.e.: this was not a custom job)
                 // we can propagate the solution to the TP
                 if let Some(template_id) = template_id {
@@ -870,22 +980,35 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
         let res = extended_channel.validate_share(m.clone());
         vardiff.increment_shares_since_last_update();
         match res {
-            Ok(ShareValidationResult::Valid) => {
+            Ok(ShareValidationResult::Valid(accepted_share)) => {
                 info!(
                     "SubmitSharesExtended: valid share | channel_id: {}, sequence_number: {} ☑️",
                     channel_id, m.sequence_number
                 );
-                // Create a quote for this accepted share
-                send_extended_share_quote_request(self, channel_id, m.sequence_number, &m);
+                let header_hash = accepted_share.header_hash_bytes();
+                send_extended_share_quote_request(
+                    self,
+                    channel_id,
+                    m.sequence_number,
+                    header_hash,
+                    &m,
+                );
                 Ok(SendTo::None(None))
             }
             Ok(ShareValidationResult::ValidWithAcknowledgement(
+                accepted_share,
                 last_sequence_number,
                 new_submits_accepted_count,
                 new_shares_sum,
             )) => {
-                // Create a quote for this accepted share
-                send_extended_share_quote_request(self, channel_id, m.sequence_number, &m);
+                let header_hash = accepted_share.header_hash_bytes();
+                send_extended_share_quote_request(
+                    self,
+                    channel_id,
+                    m.sequence_number,
+                    header_hash,
+                    &m,
+                );
                 let success = SubmitSharesSuccess {
                     channel_id,
                     last_sequence_number,
@@ -895,10 +1018,16 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
                 info!("SubmitSharesExtended: {} ✅", success);
                 Ok(SendTo::Respond(Mining::SubmitSharesSuccess(success)))
             }
-            Ok(ShareValidationResult::BlockFound(template_id, coinbase)) => {
+            Ok(ShareValidationResult::BlockFound(accepted_share, template_id, coinbase)) => {
                 info!("SubmitSharesExtended: 💰 Block Found!!! 💰");
-                // Create a quote for this accepted block (which is also a share)
-                send_extended_share_quote_request(self, channel_id, m.sequence_number, &m);
+                let header_hash = accepted_share.header_hash_bytes();
+                send_extended_share_quote_request(
+                    self,
+                    channel_id,
+                    m.sequence_number,
+                    header_hash,
+                    &m,
+                );
                 // if we have a template id (i.e.: this was not a custom job)
                 // we can propagate the solution to the TP
                 if let Some(template_id) = template_id {

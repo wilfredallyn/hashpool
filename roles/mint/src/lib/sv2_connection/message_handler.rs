@@ -1,14 +1,15 @@
-use std::sync::Arc;
+use anyhow::Result;
 use cdk::mint::Mint;
 use codec_sv2::{StandardEitherFrame, StandardSv2Frame};
+use roles_logic_sv2::parsers_sv2::AnyMessage;
+use std::sync::Arc;
 use tracing::info;
-use anyhow::Result;
 
-use super::quote_processing::process_mint_quote_message;
-use super::super::message_types::MintMessageType;
+use super::{super::message_types::MintMessageType, quote_processing::process_mint_quote_message};
 
 /// Type alias for frames used in mint/pool communication
-type MintFrame = StandardEitherFrame<Vec<u8>>;
+/// Uses AnyMessage to work with Connection channel types
+type MintFrame = StandardEitherFrame<AnyMessage<'static>>;
 
 /// Handle SV2 connection frames and process mint quote requests
 pub async fn handle_sv2_connection(
@@ -17,14 +18,14 @@ pub async fn handle_sv2_connection(
     sender: async_channel::Sender<MintFrame>,
 ) -> Result<()> {
     info!("Starting SV2 message handling loop");
-    
+
     while let Ok(either_frame) = receiver.recv().await {
         if let Err(e) = process_sv2_frame(&mint, either_frame, &sender).await {
             tracing::error!("Error processing SV2 frame: {}", e);
             // Continue processing other frames
         }
     }
-    
+
     Ok(())
 }
 
@@ -37,9 +38,7 @@ async fn process_sv2_frame(
     tracing::debug!("Received SV2 either frame");
 
     match either_frame {
-        StandardEitherFrame::Sv2(incoming) => {
-            process_sv2_message(mint, incoming, sender).await
-        }
+        StandardEitherFrame::Sv2(incoming) => process_sv2_message(mint, incoming, sender).await,
         StandardEitherFrame::HandShake(_) => {
             tracing::debug!("Received handshake frame - ignoring");
             Ok(())
@@ -50,7 +49,7 @@ async fn process_sv2_frame(
 /// Process an SV2 message frame
 async fn process_sv2_message(
     mint: &Arc<Mint>,
-    mut incoming: StandardSv2Frame<Vec<u8>>,
+    mut incoming: StandardSv2Frame<AnyMessage<'static>>,
     sender: &async_channel::Sender<MintFrame>,
 ) -> Result<()> {
     tracing::debug!("Received SV2 frame");
@@ -59,9 +58,13 @@ async fn process_sv2_message(
         .get_header()
         .ok_or_else(|| anyhow::anyhow!("No header set"))?
         .msg_type();
-    let payload = incoming.payload();
+    let payload = incoming.payload().to_vec();
 
-    tracing::debug!("Received message type: 0x{:02x}, payload length: {} bytes", message_type, payload.len());
+    tracing::debug!(
+        "Received message type: 0x{:02x}, payload length: {} bytes",
+        message_type,
+        payload.len()
+    );
 
     let msg_type = MintMessageType::from_code(message_type);
     match msg_type {
@@ -69,19 +72,22 @@ async fn process_sv2_message(
         MintMessageType::Unknown(0x00) | MintMessageType::Unknown(0x01) => {
             tracing::debug!("Received setup response during connection");
             Ok(())
-        },
-        // Mint quote messages
+        }
+        // Mint quote messages from pool
         MintMessageType::MintQuoteRequest => {
-            process_mint_quote_message(mint.clone(), message_type, payload, sender).await
-        },
+            tracing::info!("Received MintQuoteRequest from pool, processing quote");
+            process_mint_quote_message(mint.clone(), message_type, &payload, sender).await
+        }
         MintMessageType::MintQuoteResponse | MintMessageType::MintQuoteError => {
-            tracing::warn!("Received unexpected response message from pool: {:?}", msg_type);
+            tracing::warn!(
+                "Received unexpected response message from pool: {:?}",
+                msg_type
+            );
             Ok(())
-        },
+        }
         MintMessageType::Unknown(code) => {
             tracing::warn!("Received unsupported message type: 0x{:02x}", code);
             Ok(())
         }
     }
 }
-

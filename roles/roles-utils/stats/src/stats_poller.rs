@@ -1,7 +1,5 @@
-use crate::stats_adapter::StatsSnapshotProvider;
-use crate::stats_client::StatsClient;
-use std::sync::Arc;
-use std::time::Duration;
+use crate::{stats_adapter::StatsSnapshotProvider, stats_client::StatsClient};
+use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tracing::{debug, error};
 

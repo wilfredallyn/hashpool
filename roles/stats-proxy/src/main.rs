@@ -1,13 +1,11 @@
-use std::net::SocketAddr;
-use std::sync::Arc;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::io::AsyncReadExt;
+use std::{net::SocketAddr, sync::Arc};
+use tokio::{
+    io::AsyncReadExt,
+    net::{TcpListener, TcpStream},
+};
 use tracing::{error, info};
 
-use stats_proxy::config::Config;
-use stats_proxy::db::StatsData;
-use stats_proxy::stats_handler::StatsHandler;
-use stats_proxy::api;
+use stats_proxy::{api, config::Config, db::StatsData, stats_handler::StatsHandler};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

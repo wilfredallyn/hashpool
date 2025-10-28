@@ -1,6 +1,5 @@
-use std::env;
-use std::fs;
 use serde::Deserialize;
+use std::{env, fs};
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -87,8 +86,7 @@ impl Config {
             .map(|s| s.as_str())
             .unwrap_or("config/web-proxy.config.toml");
 
-        let web_proxy_config_str = fs::read_to_string(web_proxy_config_path)
-            .unwrap_or_default();
+        let web_proxy_config_str = fs::read_to_string(web_proxy_config_path).unwrap_or_default();
         let web_proxy_config: WebProxyConfig = if web_proxy_config_str.is_empty() {
             WebProxyConfig {
                 server: ServerConfig::default(),
@@ -176,7 +174,6 @@ impl Config {
             .and_then(|i| i.as_integer())
             .unwrap_or(3) as u64;
 
-
         Ok(Config {
             stats_proxy_url,
             web_server_address,
@@ -210,8 +207,14 @@ mod tests {
             request_timeout_secs = 85
         "#;
         let config: WebProxyConfig = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.server.listen_address, Some("127.0.0.1:4000".to_string()));
-        assert_eq!(config.stats_proxy.url, Some("http://stats.example.com:8084".to_string()));
+        assert_eq!(
+            config.server.listen_address,
+            Some("127.0.0.1:4000".to_string())
+        );
+        assert_eq!(
+            config.stats_proxy.url,
+            Some("http://stats.example.com:8084".to_string())
+        );
         assert_eq!(config.http_client.pool_idle_timeout_secs, Some(400));
         assert_eq!(config.http_client.request_timeout_secs, Some(85));
     }

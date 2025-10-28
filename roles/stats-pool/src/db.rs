@@ -1,5 +1,7 @@
-use std::sync::RwLock;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::RwLock,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use stats::stats_adapter::{JdsSnapshot, PoolSnapshot, ServiceConnection, ServiceType};
 
@@ -194,6 +196,9 @@ mod tests {
 
         assert_eq!(retrieved.downstream_proxies.len(), 1);
         assert_eq!(retrieved.downstream_proxies[0].shares_submitted, 5);
-        assert_eq!(retrieved.services[0].service_type, ServiceType::JobDeclarator);
+        assert_eq!(
+            retrieved.services[0].service_type,
+            ServiceType::JobDeclarator
+        );
     }
 }
