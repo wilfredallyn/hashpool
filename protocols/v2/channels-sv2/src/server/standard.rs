@@ -40,7 +40,9 @@ use crate::{
         jobs::{
             extended::ExtendedJob, factory::JobFactory, job_store::JobStore, standard::StandardJob,
         },
-        share_accounting::{AcceptedShare, ShareAccounting, ShareValidationError, ShareValidationResult},
+        share_accounting::{
+            AcceptedShare, ShareAccounting, ShareValidationError, ShareValidationResult,
+        },
     },
     target::{bytes_to_hex, hash_rate_to_target, target_to_difficulty, u256_to_block_hash},
 };
@@ -1237,7 +1239,8 @@ mod tests {
             ntime: 1745611105,
             version: 536870912,
         };
-        let res = standard_channel.validate_share(valid_share)
+        let res = standard_channel
+            .validate_share(valid_share)
             .expect("share should validate successfully");
 
         let ShareValidationResult::Valid(accepted_share) = res else {

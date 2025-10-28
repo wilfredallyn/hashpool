@@ -278,7 +278,14 @@ impl Sv1Server {
                                     d.downstreams.insert(downstream_id, downstream.clone());
                                     // Insert vardiff state for this downstream only if vardiff is enabled
                                     if self.config.downstream_difficulty_config.enable_vardiff {
-                                        let vardiff = Arc::new(RwLock::new(VardiffState::new().expect("Failed to create vardiffstate")));
+                                        let min_hashrate = self
+                                            .config
+                                            .downstream_difficulty_config
+                                            .min_individual_miner_hashrate;
+                                        let vardiff = Arc::new(RwLock::new(
+                                            VardiffState::new_with_min(min_hashrate)
+                                                .expect("Failed to create vardiffstate"),
+                                        ));
                                         d.vardiff.insert(downstream_id, vardiff);
                                     }
                                 });

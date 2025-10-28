@@ -247,7 +247,16 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
             self.group_channel = Some(Arc::new(RwLock::new(group_channel)));
         }
 
-        let nominal_hash_rate = incoming.nominal_hash_rate;
+        let mut nominal_hash_rate = incoming.nominal_hash_rate;
+        if nominal_hash_rate < self.min_individual_miner_hashrate {
+            debug!(
+                "Clamping nominal_hash_rate from {:.2} H/s to {:.2} H/s for channel {} to match minimum difficulty",
+                nominal_hash_rate,
+                self.min_individual_miner_hashrate,
+                self.id
+            );
+            nominal_hash_rate = self.min_individual_miner_hashrate;
+        }
         let requested_max_target = incoming.max_target.into_static();
 
         let extranonce_prefix = self
@@ -391,7 +400,7 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
 
         let messages = messages.into_iter().map(SendTo::Respond).collect();
 
-        let vardiff = VardiffState::new()?;
+        let vardiff = VardiffState::new_with_min(self.min_individual_miner_hashrate)?;
 
         self.standard_channels
             .insert(channel_id, Arc::new(RwLock::new(standard_channel)));
@@ -430,7 +439,16 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
 
         info!("Received OpenExtendedMiningChannel: {}", m);
 
-        let nominal_hash_rate = m.nominal_hash_rate;
+        let mut nominal_hash_rate = m.nominal_hash_rate;
+        if nominal_hash_rate < self.min_individual_miner_hashrate {
+            debug!(
+                "Clamping nominal_hash_rate from {:.2} H/s to {:.2} H/s for downstream {} extended channel",
+                nominal_hash_rate,
+                self.min_individual_miner_hashrate,
+                self.id
+            );
+            nominal_hash_rate = self.min_individual_miner_hashrate;
+        }
         let requested_max_target = m.max_target.into_static();
         let requested_min_rollable_extranonce_size = m.min_extranonce_size;
 
@@ -616,7 +634,7 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
 
         let messages = messages.into_iter().map(SendTo::Respond).collect();
 
-        let vardiff = VardiffState::new()?;
+        let vardiff = VardiffState::new_with_min(self.min_individual_miner_hashrate)?;
 
         self.extended_channels
             .insert(channel_id, Arc::new(RwLock::new(extended_channel)));
@@ -639,7 +657,16 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
         info!("Received UpdateChannel message: {}", m);
 
         let channel_id = m.channel_id;
-        let new_nominal_hash_rate = m.nominal_hash_rate;
+        let mut new_nominal_hash_rate = m.nominal_hash_rate;
+        if new_nominal_hash_rate < self.min_individual_miner_hashrate {
+            debug!(
+                "Clamping UpdateChannel nominal_hash_rate from {:.2} H/s to {:.2} H/s for channel {}",
+                new_nominal_hash_rate,
+                self.min_individual_miner_hashrate,
+                channel_id
+            );
+            new_nominal_hash_rate = self.min_individual_miner_hashrate;
+        }
         let requested_maximum_target = m.maximum_target.into_static();
 
         let is_standard_channel = self.standard_channels.contains_key(&channel_id);

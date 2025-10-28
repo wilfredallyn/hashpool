@@ -139,6 +139,20 @@ impl TranslatorSv2 {
     pub async fn start(mut self) {
         info!("Starting Translator Proxy...");
 
+        let min_hashrate = self
+            .config
+            .downstream_difficulty_config
+            .min_individual_miner_hashrate as f64;
+        let shares_per_minute = self.config.downstream_difficulty_config.shares_per_minute;
+        info!(
+            "Downstream difficulty derived from minimum_difficulty = {} bits: min_hashrate ~ {:.3} GH/s (shares_per_minute = {:.2})",
+            self.config
+                .downstream_difficulty_config
+                .minimum_difficulty_bits(),
+            min_hashrate / 1_000_000_000.0,
+            shares_per_minute
+        );
+
         // Initialize and validate wallet config if mint is configured
         if self.config.mint.is_some() {
             self.config

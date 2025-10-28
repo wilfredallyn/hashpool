@@ -7,12 +7,11 @@ use std::sync::Arc;
 use thiserror::Error;
 
 use bitcoin_hashes::{sha256::Hash as Sha256Hash, Hash};
-use mint_quote_sv2::CompressedPubKey;
 use ehash::calculate_ehash_amount;
 use mint_pool_messaging::{build_parsed_quote_request, MintPoolMessageHub, PendingQuoteContext};
+use mint_quote_sv2::CompressedPubKey;
 use shared_config::Sv2MessagingConfig;
-use tracing::{debug, info};
-use tracing::error as log_error;
+use tracing::{debug, error as log_error, info};
 
 /// Error type for quote dispatcher operations
 #[derive(Debug, Error)]
@@ -93,7 +92,11 @@ impl QuoteDispatcher {
         }
 
         // Check if messaging is enabled
-        let messaging_enabled = self.sv2_config.as_ref().map(|cfg| cfg.enabled).unwrap_or(true);
+        let messaging_enabled = self
+            .sv2_config
+            .as_ref()
+            .map(|cfg| cfg.enabled)
+            .unwrap_or(true);
         if !messaging_enabled {
             debug!(
                 "SV2 messaging disabled; skipping mint quote dispatch for channel {}",
@@ -103,8 +106,10 @@ impl QuoteDispatcher {
         }
 
         // Build the parsed quote request
-        let parsed = build_parsed_quote_request(amount, header_hash, locking_pubkey)
-            .map_err(|e| DispatchError::FailedToBuildQuote(format!("Failed to build quote: {e}")))?;
+        let parsed =
+            build_parsed_quote_request(amount, header_hash, locking_pubkey).map_err(|e| {
+                DispatchError::FailedToBuildQuote(format!("Failed to build quote: {e}"))
+            })?;
 
         let context = PendingQuoteContext {
             channel_id,
