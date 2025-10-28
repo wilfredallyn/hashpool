@@ -50,13 +50,20 @@ impl Downstream {
         target: Target,
         hashrate: Option<f32>,
         sv1_server_data: Arc<Mutex<Sv1ServerData>>,
+        miner_id: Option<u32>,
+        miner_tracker: Option<Arc<crate::miner_stats::MinerTracker>>,
     ) -> Self {
-        let downstream_data = Arc::new(Mutex::new(DownstreamData::new(
-            downstream_id,
-            target,
-            hashrate,
-            sv1_server_data,
-        )));
+        let downstream_data = Arc::new(Mutex::new({
+            let mut data = DownstreamData::new(
+                downstream_id,
+                target,
+                hashrate,
+                sv1_server_data,
+            );
+            data.miner_id = miner_id;
+            data.miner_tracker = miner_tracker;
+            data
+        }));
         let downstream_channel_state = DownstreamChannelState::new(
             downstream_sv1_sender,
             downstream_sv1_receiver,

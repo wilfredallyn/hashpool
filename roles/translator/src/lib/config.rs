@@ -45,6 +45,15 @@ pub struct TranslatorConfig {
     pub mint: Option<MintConfig>,
     /// The path to the log file for the Translator.
     log_file: Option<PathBuf>,
+    /// Optional address of the stats service for sending snapshots
+    #[serde(default)]
+    pub stats_server_address: Option<String>,
+    /// Snapshot poll interval in seconds
+    #[serde(default = "default_snapshot_poll_interval_secs")]
+    pub snapshot_poll_interval_secs: u64,
+    /// Whether to redact IP addresses in stats
+    #[serde(default = "default_redact_ip")]
+    pub redact_ip: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -66,6 +75,16 @@ impl Upstream {
             authority_pubkey,
         }
     }
+}
+
+/// Default snapshot poll interval (5 seconds)
+fn default_snapshot_poll_interval_secs() -> u64 {
+    5
+}
+
+/// Default IP redaction setting (true for privacy)
+fn default_redact_ip() -> bool {
+    true
 }
 
 impl TranslatorConfig {
@@ -98,6 +117,9 @@ impl TranslatorConfig {
             wallet,
             mint,
             log_file: None,
+            stats_server_address: None,
+            snapshot_poll_interval_secs: 5,
+            redact_ip: true,
         }
     }
 

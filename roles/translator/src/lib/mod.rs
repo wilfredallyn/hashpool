@@ -38,6 +38,8 @@ use crate::{
 
 pub mod config;
 pub mod error;
+pub mod miner_stats;
+pub mod stats_integration;
 pub mod status;
 pub mod sv1;
 pub mod sv2;
@@ -49,6 +51,7 @@ pub mod utils;
 pub struct TranslatorSv2 {
     config: TranslatorConfig,
     wallet: Option<Arc<Wallet>>,
+    miner_tracker: Arc<miner_stats::MinerTracker>,
 }
 
 impl std::fmt::Debug for TranslatorSv2 {
@@ -56,6 +59,7 @@ impl std::fmt::Debug for TranslatorSv2 {
         f.debug_struct("TranslatorSv2")
             .field("config", &self.config)
             .field("wallet", &self.wallet.is_some())
+            .field("miner_tracker", &"MinerTracker")
             .finish()
     }
 }
@@ -69,6 +73,7 @@ impl TranslatorSv2 {
         Self {
             config,
             wallet: None,
+            miner_tracker: Arc::new(miner_stats::MinerTracker::new()),
         }
     }
 
@@ -203,6 +208,37 @@ impl TranslatorSv2 {
             debug!("Quote sweeper disabled: wallet not configured");
         }
 
+        // Start snapshot-based stats polling loop to send stats to stats service
+        let stats_addr_opt = self.config.stats_server_address.clone();
+        let stats_poll_interval = self.config.snapshot_poll_interval_secs;
+        let translator_clone = self.clone();
+        if let Some(stats_addr) = stats_addr_opt {
+            use stats::stats_adapter::StatsSnapshotProvider;
+            use stats::stats_client::StatsClient;
+
+            let stats_client = StatsClient::new(stats_addr.clone());
+            let translator_for_stats = translator_clone.clone();
+
+            info!("Starting stats polling loop, sending to {} every {} seconds",
+                  stats_addr, stats_poll_interval);
+
+            task_manager.spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(stats_poll_interval));
+
+                loop {
+                    interval.tick().await;
+
+                    // Get snapshot via trait
+                    let snapshot = translator_for_stats.get_snapshot();
+
+                    // Send to stats service
+                    if let Err(e) = stats_client.send_snapshot(snapshot).await {
+                        error!("Failed to send stats snapshot: {}", e);
+                    }
+                }
+            });
+        }
+
         let (status_sender, status_receiver) = async_channel::unbounded::<Status>();
 
         let (channel_manager_to_upstream_sender, channel_manager_to_upstream_receiver) =
@@ -269,6 +305,7 @@ impl TranslatorSv2 {
             channel_manager_to_sv1_server_receiver,
             sv1_server_to_channel_manager_sender,
             self.config.clone(),
+            self.miner_tracker.clone(),
         ));
 
         ChannelManager::run_channel_manager_tasks(

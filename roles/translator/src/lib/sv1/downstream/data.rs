@@ -13,6 +13,8 @@ use crate::sv1::sv1_server::data::Sv1ServerData;
 pub struct DownstreamData {
     pub channel_id: Option<u32>,
     pub downstream_id: u32,
+    pub miner_id: Option<u32>,
+    pub miner_tracker: Option<Arc<crate::miner_stats::MinerTracker>>,
     pub extranonce1: Vec<u8>,
     pub extranonce2_len: usize,
     pub version_rolling_mask: Option<HexU32Be>,
@@ -51,6 +53,8 @@ impl DownstreamData {
         DownstreamData {
             channel_id: None,
             downstream_id,
+            miner_id: None,
+            miner_tracker: None,
             extranonce1: vec![0; 8],
             extranonce2_len: 4,
             version_rolling_mask: None,

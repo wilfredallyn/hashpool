@@ -31,6 +31,7 @@ use hex;
 use key_utils::SignatureService;
 use mint_pool_messaging::MintPoolMessageHub;
 use nohash_hasher::BuildNoHashHasher;
+use pool_stats;
 use quote_dispatcher::QuoteDispatcher;
 use secp256k1;
 use std::{
@@ -115,6 +116,8 @@ pub type EitherFrame = StandardEitherFrame<Message>;
 pub struct Downstream {
     // The unique identifier for this downstream connection's channel or group.
     id: u32,
+    // The socket address of the downstream connection
+    pub address: std::net::SocketAddr,
     // Channel receiver for incoming SV2 frames from the network connection task.
     receiver: Receiver<EitherFrame>,
     // Channel sender for outgoing SV2 frames to the network connection task.
@@ -122,7 +125,8 @@ pub struct Downstream {
     // Whether the downstream requires standard jobs.
     requires_standard_jobs: bool,
     // Whether the downstream requires custom work.
-    requires_custom_work: bool,
+    // Used to distinguish JDC (Job Declarator Client) from Translator
+    pub requires_custom_work: bool,
     // Sender channel to forward valid `SubmitSolution` messages received from this
     // downstream miner to the main [`Pool`] task, which then sends them upstream.
     solution_sender: Sender<SubmitSolution<'static>>,
@@ -183,7 +187,7 @@ impl std::fmt::Debug for Downstream {
 pub struct Pool {
     // A map storing all active downstream connections.
     // Keyed by the downstream's channel/group ID (`u32`).
-    downstreams: HashMap<u32, Arc<Mutex<Downstream>>, BuildNoHashHasher<u32>>,
+    pub downstreams: HashMap<u32, Arc<Mutex<Downstream>>, BuildNoHashHasher<u32>>,
     // Sender channel to forward solutions received from any downstream connection
     // to the upstream Template Provider connection task.
     solution_sender: Sender<SubmitSolution<'static>>,
@@ -211,6 +215,10 @@ pub struct Pool {
     // Miner's compressed public key for quote attribution (33 bytes as Vec<u8>)
     locking_key_bytes: Option<Vec<u8>>,
     min_individual_miner_hashrate: f32,
+    // Optional JD-Server address for stats reporting
+    pub jd_server_address: Option<String>,
+    // Registry for tracking downstream statistics (shares, quotes, ehash, last_share)
+    pub stats_registry: Arc<pool_stats::PoolStatsRegistry>,
 }
 
 impl Downstream {
@@ -279,11 +287,32 @@ impl Downstream {
 
         let pool_tag = pool.safe_lock(|p| p.pool_tag_string.clone())?;
         let mint_manager = pool.safe_lock(|p| p.mint_manager.clone())?;
-        let quote_dispatcher = pool.safe_lock(|p| p.quote_dispatcher.clone())?;
+
+        // Register downstream with stats and create per-downstream quote dispatcher with callback
+        let quote_dispatcher = pool.safe_lock(|p| {
+            // Register the downstream with the stats registry
+            let downstream_stats = p.stats_registry.register_downstream(id);
+
+            // Create stats callback
+            let stats_callback = Arc::new(pool_stats::StatsCallback::new(downstream_stats));
+
+            // Create per-downstream quote dispatcher with stats callback
+            if let Some(ref base_dispatcher) = p.quote_dispatcher {
+                // Get the config needed to create a new dispatcher
+                Some(Arc::new(
+                    (**base_dispatcher)
+                        .clone()
+                        .with_callback(stats_callback)
+                ))
+            } else {
+                None
+            }
+        })?;
 
         // Create the Downstream instance, wrapped for shared access.
         let self_ = Arc::new(Mutex::new(Downstream {
             id,
+            address,
             receiver,
             sender: sender.clone(),
             requires_standard_jobs,
@@ -1176,6 +1205,8 @@ impl Pool {
             mint_connection: None, // Phase 2: Will be established when mint service connects
             locking_key_bytes,
             min_individual_miner_hashrate: derived_min_hashrate,
+            jd_server_address: config.jd_server_address().map(|s| s.to_string()),
+            stats_registry: pool_stats::PoolStatsRegistry::new(),
         }));
 
         let cloned = pool.clone();
@@ -1232,6 +1263,10 @@ impl Pool {
         } else {
             info!("Skipping quote poller startup (no mint HTTP endpoint configured)");
         }
+
+        // Extract stats configuration before config is moved
+        let stats_addr_opt = config.stats_server_address().map(|s| s.to_string());
+        let stats_poll_interval = config.snapshot_poll_interval_secs();
 
         info!("Starting up Pool server");
         let status_tx_clone = status_tx.clone();
@@ -1294,6 +1329,43 @@ impl Pool {
                 error!("Downstream shutdown and Status Channel dropped");
             }
         });
+
+        // Start snapshot-based stats polling loop to send stats to stats service
+        if let Some(stats_addr) = stats_addr_opt {
+            use stats::{
+                stats_adapter::StatsSnapshotProvider,
+                stats_client::StatsClient,
+            };
+
+            let stats_client = StatsClient::new(stats_addr.clone());
+            let pool_clone = cloned3.clone();
+
+            info!("Starting stats polling loop, sending to {} every {} seconds",
+                  stats_addr, stats_poll_interval);
+
+            task::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(stats_poll_interval));
+
+                loop {
+                    interval.tick().await;
+
+                    // Get snapshot via trait - need to lock pool to call get_snapshot
+                    let snapshot = match pool_clone.safe_lock(|p| p.get_snapshot()) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            error!("Failed to lock pool for stats snapshot: {}", e);
+                            continue;
+                        }
+                    };
+
+                    // Send to stats service
+                    if let Err(e) = stats_client.send_snapshot(snapshot).await {
+                        error!("Failed to send stats snapshot: {}", e);
+                    }
+                }
+            });
+        }
+
         Ok(cloned3)
     }
 
@@ -1307,6 +1379,7 @@ impl Pool {
     /// to send a message to the removed downstream. This attempt will likely fail
     /// harmlessly when `Downstream::send` tries to use the closed channel.
     pub fn remove_downstream(&mut self, downstream_id: u32) {
+        self.stats_registry.unregister_downstream(downstream_id);
         self.downstreams.remove(&downstream_id);
     }
 }

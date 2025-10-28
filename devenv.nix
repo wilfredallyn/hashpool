@@ -160,6 +160,8 @@ in {
 
     jd-client = {
       exec = withLogging ''
+        ${waitForPort poolConfig.pool.port "Pool"}
+        ${waitForPort 34264 "JD-Server"}
         cd ${config.devenv.root} && cargo -C roles/jd-client -Z unstable-options run -- -c ${config.devenv.root}/config/jdc.config.toml
       '' "job-client.log";
     };

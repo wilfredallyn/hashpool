@@ -181,9 +181,17 @@ impl DifficultyManager {
                 // Always update the downstream's pending target and hashrate
                 _ = sv1_server_data.safe_lock(|dmap| {
                     if let Some(d) = dmap.downstreams.get(downstream_id) {
-                        _ = d.downstream_data.safe_lock(|d| {
-                            d.set_pending_target(new_target.clone());
-                            d.set_pending_hashrate(Some(new_hashrate));
+                        _ = d.downstream_data.safe_lock(|dd| {
+                            dd.set_pending_target(new_target.clone());
+                            dd.set_pending_hashrate(Some(new_hashrate));
+
+                            // Update miner tracker with new hashrate
+                            if let (Some(miner_id), Some(miner_tracker)) = (dd.miner_id, &dd.miner_tracker) {
+                                let miner_tracker = miner_tracker.clone();
+                                tokio::spawn(async move {
+                                    miner_tracker.update_hashrate(miner_id, new_hashrate as f64).await;
+                                });
+                            }
                         });
                     }
                 });

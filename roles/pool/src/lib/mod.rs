@@ -8,6 +8,7 @@
 pub mod config;
 pub mod error;
 pub mod mining_pool;
+pub mod stats_integration;
 pub mod status;
 pub mod template_receiver;
 use async_channel::{bounded, unbounded};

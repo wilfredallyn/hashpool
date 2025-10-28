@@ -61,6 +61,7 @@ pub struct Sv1Server {
     clean_job: AtomicBool,
     sequence_counter: AtomicU32,
     miner_counter: AtomicU32,
+    miner_tracker: Arc<crate::miner_stats::MinerTracker>,
 }
 
 impl Sv1Server {
@@ -84,6 +85,7 @@ impl Sv1Server {
         channel_manager_receiver: Receiver<Mining<'static>>,
         channel_manager_sender: Sender<Mining<'static>>,
         config: TranslatorConfig,
+        miner_tracker: Arc<crate::miner_stats::MinerTracker>,
     ) -> Self {
         let shares_per_minute = config.downstream_difficulty_config.shares_per_minute;
         let sv1_server_channel_state =
@@ -98,6 +100,7 @@ impl Sv1Server {
             clean_job: AtomicBool::new(true),
             miner_counter: AtomicU32::new(0),
             sequence_counter: AtomicU32::new(0),
+            miner_tracker,
         }
     }
 
@@ -190,6 +193,14 @@ impl Sv1Server {
                             if let Some(downstream) = current_downstream {
                                 info!("🔌 Downstream: {downstream_id} disconnected and removed from sv1 server downstreams");
 
+                                // Remove miner from tracking
+                                {
+                                    let miner_tracker = self.miner_tracker.clone();
+                                    tokio::spawn(async move {
+                                        miner_tracker.remove_miner(downstream_id).await;
+                                    });
+                                }
+
                                 // In aggregated mode, send UpdateChannel to reflect the new state (only if vardiff enabled)
                                 if self.config.downstream_difficulty_config.enable_vardiff {
                                     DifficultyManager::send_update_channel_on_downstream_state_change(
@@ -262,6 +273,13 @@ impl Sv1Server {
 
                             let connection = ConnectionSV1::new(stream).await;
                             let downstream_id = self.sv1_server_data.super_safe_lock(|v| v.downstream_id_factory.next());
+
+                            // Add miner to tracking and get miner_id before creating downstream
+                            let miner_id = {
+                                let miner_tracker = self.miner_tracker.clone();
+                                miner_tracker.add_miner(addr, format!("Miner-{}", downstream_id)).await
+                            };
+
                             let downstream = Arc::new(Downstream::new(
                                 downstream_id,
                                 connection.sender().clone(),
@@ -271,6 +289,8 @@ impl Sv1Server {
                                 first_target.clone(),
                                 Some(self.config.downstream_difficulty_config.min_individual_miner_hashrate),
                                 self.sv1_server_data.clone(),
+                                Some(miner_id),
+                                Some(self.miner_tracker.clone()),
                             ));
                             // vardiff initialization (only if enabled)
                             _ = self.sv1_server_data
@@ -880,8 +900,9 @@ mod tests {
         let (_downstream_sender, cm_receiver) = unbounded();
         let config = create_test_config();
         let addr = "127.0.0.1:3333".parse().unwrap();
+        let miner_tracker = std::sync::Arc::new(crate::miner_stats::MinerTracker::new());
 
-        Sv1Server::new(addr, cm_receiver, cm_sender, config)
+        Sv1Server::new(addr, cm_receiver, cm_sender, config, miner_tracker)
     }
 
     #[test]
@@ -904,8 +925,9 @@ mod tests {
         let (cm_sender, _cm_receiver) = unbounded();
         let (_downstream_sender, cm_receiver) = unbounded();
         let addr = "127.0.0.1:3333".parse().unwrap();
+        let miner_tracker = std::sync::Arc::new(crate::miner_stats::MinerTracker::new());
 
-        let server = Sv1Server::new(addr, cm_receiver, cm_sender, config);
+        let server = Sv1Server::new(addr, cm_receiver, cm_sender, config, miner_tracker);
 
         assert!(server.config.aggregate_channels);
         assert!(server.config.downstream_difficulty_config.enable_vardiff);
@@ -920,8 +942,9 @@ mod tests {
         let (cm_sender, _cm_receiver) = unbounded();
         let (_downstream_sender, cm_receiver) = unbounded();
         let addr = "127.0.0.1:3333".parse().unwrap();
+        let miner_tracker = std::sync::Arc::new(crate::miner_stats::MinerTracker::new());
 
-        let server = Sv1Server::new(addr, cm_receiver, cm_sender, config);
+        let server = Sv1Server::new(addr, cm_receiver, cm_sender, config, miner_tracker);
 
         assert!(!server.config.aggregate_channels);
         assert!(!server.config.downstream_difficulty_config.enable_vardiff);
@@ -970,8 +993,9 @@ mod tests {
         let (cm_sender, _cm_receiver) = unbounded();
         let (_downstream_sender, cm_receiver) = unbounded();
         let addr = "127.0.0.1:3333".parse().unwrap();
+        let miner_tracker = std::sync::Arc::new(crate::miner_stats::MinerTracker::new());
 
-        let server = Sv1Server::new(addr, cm_receiver, cm_sender, config);
+        let server = Sv1Server::new(addr, cm_receiver, cm_sender, config, miner_tracker);
         let target: Target = hash_rate_to_target(200.0, 5.0).unwrap().into();
 
         let set_target = SetTarget {
@@ -992,8 +1016,9 @@ mod tests {
         let (cm_sender, _cm_receiver) = unbounded();
         let (_downstream_sender, cm_receiver) = unbounded();
         let addr = "127.0.0.1:3333".parse().unwrap();
+        let miner_tracker = std::sync::Arc::new(crate::miner_stats::MinerTracker::new());
 
-        let server = Sv1Server::new(addr, cm_receiver, cm_sender, config);
+        let server = Sv1Server::new(addr, cm_receiver, cm_sender, config, miner_tracker);
         let target: Target = hash_rate_to_target(200.0, 5.0).unwrap().into();
 
         let set_target = SetTarget {

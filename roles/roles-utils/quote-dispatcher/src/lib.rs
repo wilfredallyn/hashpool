@@ -36,6 +36,7 @@ pub trait QuoteEventCallback: Send + Sync {
 ///
 /// This handles all the logic for creating and dispatching quote requests
 /// to the mint service, keeping this functionality isolated from pool logic.
+#[derive(Clone)]
 pub struct QuoteDispatcher {
     hub: Arc<MintPoolMessageHub>,
     sv2_config: Option<Sv2MessagingConfig>,

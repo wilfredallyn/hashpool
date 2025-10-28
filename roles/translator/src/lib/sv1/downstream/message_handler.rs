@@ -54,8 +54,17 @@ impl IsServer<'static> for DownstreamData {
     }
 
     fn handle_authorize(&self, request: &client_to_server::Authorize) -> bool {
-        info!("Received mining.authorize from Sv1 downstream");
+        info!("Received mining.authorize from Sv1 downstream: {}", request.name);
         debug!("Down: Handling mining.authorize: {:?}", request);
+
+        // Update miner name in tracker with the real worker name
+        if let (Some(miner_id), Some(miner_tracker)) = (self.miner_id, self.miner_tracker.clone()) {
+            let worker_name = request.name.clone();
+            tokio::spawn(async move {
+                miner_tracker.update_miner_name(miner_id, worker_name).await;
+            });
+        }
+
         true
     }
 
@@ -89,6 +98,15 @@ impl IsServer<'static> for DownstreamData {
             };
             // Store the share to be sent to the Sv1Server
             self.pending_share.replace(Some(to_send));
+
+            // Track share submission for this miner with current hashrate from difficulty management
+            if let (Some(miner_id), Some(miner_tracker)) = (self.miner_id, self.miner_tracker.clone()) {
+                let current_hashrate = self.hashrate.unwrap_or(0.0) as f32;
+                tokio::spawn(async move {
+                    miner_tracker.increment_shares(miner_id, current_hashrate).await;
+                });
+            }
+
             true
         } else {
             error!("Cannot submit share: channel_id is None (waiting for OpenExtendedMiningChannelSuccess)");
