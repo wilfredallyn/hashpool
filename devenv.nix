@@ -140,7 +140,7 @@ in {
     pool = {
       exec = withLogging ''
         ${waitForPort 9083 "Stats-Pool"}
-        cargo -C roles/pool -Z unstable-options run -- \
+        cd ${config.devenv.root} && cargo -C roles/pool -Z unstable-options run -- \
           -c ${config.devenv.root}/config/pool.config.toml \
           -g ${config.devenv.root}/config/shared/pool.toml
       '' "pool.log";
@@ -154,20 +154,20 @@ in {
           DEVENV_ROOT=${config.devenv.root} BITCOIND_DATADIR=${bitcoindDataDir} ${config.devenv.root}/scripts/regtest-setup.sh
         fi
         ${waitForPort poolConfig.pool.port "Pool"}
-        cargo -C roles/jd-server -Z unstable-options run -- -c ${config.devenv.root}/config/jds.config.toml
+        cd ${config.devenv.root} && cargo -C roles/jd-server -Z unstable-options run -- -c ${config.devenv.root}/config/jds.config.toml
       '' "jd-server.log";
     };
 
     jd-client = {
       exec = withLogging ''
-        cargo -C roles/jd-client -Z unstable-options run -- -c ${config.devenv.root}/config/jdc.config.toml
+        cd ${config.devenv.root} && cargo -C roles/jd-client -Z unstable-options run -- -c ${config.devenv.root}/config/jdc.config.toml
       '' "job-client.log";
     };
 
     mint = {
       exec = withLogging ''
         export CDK_MINT_DB_PATH=${mintDb}
-        cargo -C roles/mint -Z unstable-options run -- -c ${config.devenv.root}/config/mint.config.toml -g ${config.devenv.root}/config/shared/pool.toml
+        cd ${config.devenv.root} && cargo -C roles/mint -Z unstable-options run -- -c ${config.devenv.root}/config/mint.config.toml -g ${config.devenv.root}/config/shared/pool.toml
       '' "mint.log";
     };
 
@@ -176,7 +176,7 @@ in {
         export CDK_WALLET_DB_PATH=${config.env.TRANSLATOR_WALLET_DB}
         ${waitForPort 8082 "Stats-Proxy"}
         ${waitForPort minerConfig.pool.port "Pool"}
-        cargo -C roles/translator -Z unstable-options run -- \
+        cd ${config.devenv.root} && cargo -C roles/translator -Z unstable-options run -- \
           -c ${config.devenv.root}/config/tproxy.config.toml \
           -g ${config.devenv.root}/config/shared/miner.toml
       '' "proxy.log";
@@ -205,14 +205,14 @@ in {
 
     stats_pool = {
       exec = withLogging ''
-        cargo -C roles/stats-pool -Z unstable-options run -- \
+        cd ${config.devenv.root} && cargo -C roles/stats-pool -Z unstable-options run -- \
           --config ${config.devenv.root}/config/stats-pool.config.toml
       '' "stats_pool.log";
     };
 
     stats_proxy = {
       exec = withLogging ''
-        cargo -C roles/stats-proxy -Z unstable-options run -- \
+        cd ${config.devenv.root} && cargo -C roles/stats-proxy -Z unstable-options run -- \
           --config ${config.devenv.root}/config/stats-proxy.config.toml \
           --tproxy-config ${config.devenv.root}/config/tproxy.config.toml \
           --shared-config ${config.devenv.root}/config/shared/miner.toml
@@ -222,7 +222,7 @@ in {
     web_pool = {
       exec = withLogging ''
         ${waitForPort statsPoolTcpPort "Stats-Pool"}
-        cargo -C roles/web-pool -Z unstable-options run -- \
+        cd ${config.devenv.root} && cargo -C roles/web-pool -Z unstable-options run -- \
           --web-pool-config ${config.devenv.root}/config/web-pool.config.toml \
           --shared-config ${config.devenv.root}/config/shared/pool.toml
       '' "web_pool.log";
@@ -231,7 +231,7 @@ in {
     web_proxy = {
       exec = withLogging ''
         ${waitForPort statsProxyTcpPort "Stats-Proxy"}
-        cargo -C roles/web-proxy -Z unstable-options run -- \
+        cd ${config.devenv.root} && cargo -C roles/web-proxy -Z unstable-options run -- \
           --web-proxy-config ${config.devenv.root}/config/web-proxy.config.toml \
           --config ${config.devenv.root}/config/tproxy.config.toml \
           --shared-config ${config.devenv.root}/config/shared/miner.toml

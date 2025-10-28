@@ -233,7 +233,7 @@ impl QuotePoller {
                                         .await
                                     {
                                         Ok(_) => {
-                                            info!(
+                                            debug!(
                                                 "✅ Sent MintQuoteNotification for quote {} to channel {}",
                                                 quote_id, channel_id
                                             );

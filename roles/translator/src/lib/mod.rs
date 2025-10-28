@@ -171,10 +171,13 @@ impl TranslatorSv2 {
                 .map(|m| m.url.clone())
                 .expect("Mint URL required for wallet");
 
+            let db_path = std::env::var("CDK_WALLET_DB_PATH")
+                .unwrap_or_else(|_| self.config.wallet.db_path.clone());
+
             match Self::create_wallet(
                 mint_url,
                 self.config.wallet.mnemonic.clone(),
-                self.config.wallet.db_path.clone(),
+                db_path,
             )
             .await
             {

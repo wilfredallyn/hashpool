@@ -27,8 +27,12 @@ use lib::{connect_to_pool_sv2, setup_mint};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Respect RUST_LOG env var, defaulting to info level with dependency filtering
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn,hyper=warn,h2=warn"));
+
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::new("debug,sqlx=warn,hyper=warn,h2=warn"))
+        .with_env_filter(env_filter)
         .init();
 
     let mut args = std::env::args().skip(1); // Skip binary name

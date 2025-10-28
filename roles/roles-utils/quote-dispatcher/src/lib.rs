@@ -125,7 +125,7 @@ impl QuoteDispatcher {
             if let Err(e) = hub.send_quote_request(parsed, context).await {
                 log_error!("Failed to dispatch mint quote request via hub: {}", e);
             } else {
-                info!(
+                debug!(
                     "Queued mint quote request via hub: share_hash={}",
                     share_hash_hex
                 );
