@@ -38,6 +38,7 @@ use crate::{
 
 pub mod config;
 pub mod error;
+pub mod faucet_api;
 pub mod miner_stats;
 pub mod stats_integration;
 pub mod status;
@@ -203,9 +204,14 @@ impl TranslatorSv2 {
         let task_manager = Arc::new(TaskManager::new());
 
         if let Some(wallet) = self.wallet.clone() {
-            self.spawn_quote_sweeper(&task_manager, wallet);
+            self.spawn_quote_sweeper(&task_manager, wallet.clone());
+
+            // Start faucet API for ehash minting
+            let faucet_port = self.config.faucet_port;
+            let faucet_timeout = self.config.faucet_timeout;
+            task_manager.spawn(faucet_api::run_faucet_api(faucet_port, wallet, faucet_timeout));
         } else {
-            debug!("Quote sweeper disabled: wallet not configured");
+            debug!("Quote sweeper and faucet disabled: wallet not configured");
         }
 
         // Start snapshot-based stats polling loop to send stats to stats service

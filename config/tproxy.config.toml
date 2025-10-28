@@ -28,6 +28,10 @@ stats_server_address = "127.0.0.1:8082"
 # Redact miner IP addresses from database and website
 redact_ip = false
 
+# Faucet configuration
+faucet_port = 8083
+faucet_timeout = 3
+
 # Primary upstream pool server (for web-proxy connection display)
 upstream_address = "127.0.0.1"
 upstream_port = 34254

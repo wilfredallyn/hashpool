@@ -54,6 +54,12 @@ pub struct TranslatorConfig {
     /// Whether to redact IP addresses in stats
     #[serde(default = "default_redact_ip")]
     pub redact_ip: bool,
+    /// Faucet port for ehash minting
+    #[serde(default = "default_faucet_port")]
+    pub faucet_port: u16,
+    /// Faucet rate limit timeout in seconds
+    #[serde(default = "default_faucet_timeout")]
+    pub faucet_timeout: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -85,6 +91,16 @@ fn default_snapshot_poll_interval_secs() -> u64 {
 /// Default IP redaction setting (true for privacy)
 fn default_redact_ip() -> bool {
     true
+}
+
+/// Default faucet port
+fn default_faucet_port() -> u16 {
+    8083
+}
+
+/// Default faucet rate limit timeout (3 seconds)
+fn default_faucet_timeout() -> u64 {
+    3
 }
 
 impl TranslatorConfig {
@@ -120,6 +136,8 @@ impl TranslatorConfig {
             stats_server_address: None,
             snapshot_poll_interval_secs: 5,
             redact_ip: true,
+            faucet_port: 8083,
+            faucet_timeout: 3,
         }
     }
 
