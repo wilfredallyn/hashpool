@@ -1,42 +1,50 @@
 # Job Declarator Client config for testnet4 production
 
-# Downstream listening address (for miners connecting to JDC)
-downstream_address = "127.0.0.1"
-downstream_port = 34265
+# Listening address for downstream miners
+listening_address = "127.0.0.1:34265"
 
 # Version support
 max_supported_version = 2
 min_supported_version = 2
-
-# Minimum extranonce2 size for downstream
-min_extranonce2_size = 8
-
-# Withhold
-withhold = false
 
 # Auth keys for encrypted connection
 authority_public_key = "9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72"
 authority_secret_key = "mkDLTBBRxdBv998612qipDYoTK3YUrqLe8uWw7gu3iXbSrn2n"
 cert_validity_sec = 3600
 
-# Retry attempts after failure
-retry = 10
+# User identity for pool connection
+user_identity = "hashpool"
 
-# Template Provider config - using local TP
+# Target number of shares per minute
+shares_per_minute = 6.0
+
+# Share batch size
+share_batch_size = 10
+
+# Min extranonce size
+min_extranonce_size = 4
+
+# JDC mode: FULLTEMPLATE or COINBASEONLY
+mode = "FULLTEMPLATE"
+
+# Template Provider config
 tp_address = "127.0.0.1:8442"
 
-# Solo Mining coinbase outputs (fallback)
-coinbase_outputs = [
-    { output_script_type = "P2WPKH", output_script_value = "036adc3bdf21e6f9a0f0fb0066bf517e5b7909ed1563d6958a10993849a7554075" },
-]
+# String to be added into the Coinbase scriptSig
+jdc_signature = "Hashpool Testnet"
+
+# Solo Mining coinbase reward script (fallback)
+# Specified as a descriptor - see https://github.com/bitcoin/bips/blob/master/bip-0380.mediawiki
+coinbase_reward_script = "addr(tb1qa0sm0hxzj0x25rh8gw5xlzwlsfvvyz8u96w3p8)"
 
 [timeout]
 unit = "secs"
 value = 1
 
-# Upstream pool and JD server addresses
+# Upstream JDS server configuration
 [[upstreams]]
 authority_pubkey = "9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72"
-pool_address = "127.0.0.1:34254"
-jd_address = "127.0.0.1:34264"
-pool_signature = "Hashpool Testnet"
+pool_address = "127.0.0.1"
+pool_port = 34254
+jds_address = "127.0.0.1"
+jds_port = 34264

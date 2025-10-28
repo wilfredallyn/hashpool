@@ -8,10 +8,9 @@ authority_public_key = "9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72"
 authority_secret_key = "mkDLTBBRxdBv998612qipDYoTK3YUrqLe8uWw7gu3iXbSrn2n"
 cert_validity_sec = 3600
 
-# List of coinbase outputs used to build the coinbase tx
-coinbase_outputs = [
-    { output_script_type = "P2WPKH", output_script_value = "036adc3bdf21e6f9a0f0fb0066bf517e5b7909ed1563d6958a10993849a7554075" },
-]
+# Coinbase reward script (specified as a descriptor)
+# For more info on descriptors see: https://github.com/bitcoin/bips/blob/master/bip-0380.mediawiki#appendix-b-index-of-script-expressions
+coinbase_reward_script = "addr(tb1qa0sm0hxzj0x25rh8gw5xlzwlsfvvyz8u96w3p8)"
 
 # JD Server listening address
 listen_jd_address = "127.0.0.1:34264"
@@ -20,7 +19,7 @@ listen_jd_address = "127.0.0.1:34264"
 listen_tp_address = "127.0.0.1:8442"
 
 # Stats server config (TCP address for stats-pool service)
-stats_server_address = "127.0.0.1:4000"
+stats_server_address = "127.0.0.1:9083"
 
 # Bitcoin Core RPC config for mempool access
 core_rpc_url = "http://127.0.0.1"

@@ -1,0 +1,20 @@
+[Unit]
+Description=Hashpool Job Declarator Client
+After=network.target hashpool-pool.service hashpool-jd-server.service
+Requires=hashpool-pool.service hashpool-jd-server.service
+
+[Service]
+Type=simple
+User=hashpool
+Group=hashpool
+WorkingDirectory=/opt/hashpool
+ExecStart=/opt/hashpool/bin/jd_client_sv2 \
+  -c /opt/hashpool/config/jdc.config.toml
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hashpool-jd-client
+
+[Install]
+WantedBy=multi-user.target
