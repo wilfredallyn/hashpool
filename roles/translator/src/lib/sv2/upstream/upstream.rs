@@ -6,6 +6,7 @@ use crate::{
     utils::{message_from_frame, ShutdownMessage},
 };
 use async_channel::{Receiver, Sender};
+use const_sv2::{MESSAGE_TYPE_MINT_QUOTE_FAILURE, MESSAGE_TYPE_MINT_QUOTE_NOTIFICATION};
 use key_utils::Secp256k1PublicKey;
 use network_helpers_sv2::noise_connection::Connection;
 use std::{net::SocketAddr, sync::Arc};
@@ -263,17 +264,45 @@ impl Upstream {
                 // Convert to standard frame
                 let std_frame: StdFrame = sv2_frame;
 
-                // Parse message from frame
+                // Quickly inspect the header to short-circuit extension messages we handle
+                // ourselves.
+                let header = std_frame
+                    .get_header()
+                    .ok_or_else(|| TproxyError::UnexpectedMessage(0))?;
+                let message_type = header.msg_type();
+
+                if message_type == MESSAGE_TYPE_MINT_QUOTE_NOTIFICATION
+                    || message_type == MESSAGE_TYPE_MINT_QUOTE_FAILURE
+                {
+                    self.upstream_channel_state
+                        .channel_manager_sender
+                        .send(EitherFrame::Sv2(std_frame.clone()))
+                        .await
+                        .map_err(|e| {
+                            error!(
+                                "Failed to send mint quote extension message to channel manager: {:?}",
+                                e
+                            );
+                            TproxyError::ChannelErrorSender
+                        })?;
+                    return Ok(());
+                }
+
+                // Parse message from frame for all other message types
                 let mut frame: codec_sv2::Frame<AnyMessage<'static>, buffer_sv2::Slice> =
                     std_frame.clone().into();
 
-                let (messsage_type, mut payload, parsed_message) = message_from_frame(&mut frame)?;
+                let (message_type_parsed, mut payload, parsed_message) =
+                    message_from_frame(&mut frame)?;
 
                 match parsed_message {
                     AnyMessage::Common(_) => {
                         // Handle common upstream messages
                         upstream
-                            .handle_common_message_frame_from_server(messsage_type, &mut payload)
+                            .handle_common_message_frame_from_server(
+                                message_type_parsed,
+                                &mut payload,
+                            )
                             .await?;
                     }
 

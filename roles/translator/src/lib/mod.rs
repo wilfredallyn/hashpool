@@ -14,10 +14,14 @@
 use anyhow::{Context, Result};
 use async_channel::unbounded;
 use bip39::Mnemonic;
-use cdk::{nuts::CurrencyUnit, wallet::Wallet};
+use cdk::{
+    nuts::{CurrencyUnit, SecretKey},
+    wallet::Wallet,
+    Amount,
+};
 use cdk_sqlite::WalletSqliteDatabase;
 use std::{net::SocketAddr, path::Path, str::FromStr, sync::Arc};
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, time::Duration};
 use tracing::{debug, error, info, warn};
 
 pub use v1::server_to_client;
@@ -189,6 +193,12 @@ impl TranslatorSv2 {
         let (notify_shutdown, _) = tokio::sync::broadcast::channel::<ShutdownMessage>(1);
         let (shutdown_complete_tx, mut shutdown_complete_rx) = mpsc::channel::<()>(1);
         let task_manager = Arc::new(TaskManager::new());
+
+        if let Some(wallet) = self.wallet.clone() {
+            self.spawn_quote_sweeper(&task_manager, wallet);
+        } else {
+            debug!("Quote sweeper disabled: wallet not configured");
+        }
 
         let (status_sender, status_receiver) = async_channel::unbounded::<Status>();
 
@@ -380,5 +390,166 @@ impl TranslatorSv2 {
         info!("Joining remaining tasks...");
         task_manager.join_all().await;
         info!("TranslatorSv2 shutdown complete.");
+    }
+
+    fn spawn_quote_sweeper(&self, task_manager: &Arc<TaskManager>, wallet: Arc<Wallet>) {
+        let locking_privkey = self.config.wallet.locking_privkey.clone();
+
+        if locking_privkey.is_none() {
+            warn!("Quote sweeper running without locking_privkey; minted tokens cannot be signed");
+        }
+
+        task_manager.spawn(async move {
+            let mut loop_count: u64 = 0;
+            loop {
+                loop_count += 1;
+                info!("🕐 Quote sweeper loop #{} starting", loop_count);
+
+                debug!("📞 About to call process_stored_quotes");
+                match Self::process_stored_quotes(&wallet, locking_privkey.as_deref()).await {
+                    Ok(_minted_amount) => {
+                        if let Ok(balance) = wallet.total_balance().await {
+                            info!("💰 Wallet balance after sweep: {} ehash", balance);
+                        }
+                    }
+                    Err(e) => {
+                        error!("❌ Quote processing failed: {}", e);
+                    }
+                }
+
+                debug!("😴 Quote sweeper sleeping for 15 seconds...");
+                tokio::time::sleep(Duration::from_secs(15)).await;
+                debug!("⏰ Quote sweeper woke up from sleep");
+            }
+        });
+    }
+
+    async fn process_stored_quotes(
+        wallet: &Arc<Wallet>,
+        locking_privkey: Option<&str>,
+    ) -> Result<u64> {
+        let pending_quotes = match wallet.get_pending_mint_quotes().await {
+            Ok(quotes) => quotes,
+            Err(e) => {
+                error!("Failed to fetch pending quotes from wallet: {}", e);
+                return Ok(0);
+            }
+        };
+
+        match wallet.total_balance().await {
+            Ok(balance) => {
+                info!("💰 Current wallet balance: {} ehash", balance);
+            }
+            Err(e) => {
+                error!("Failed to get wallet balance: {}", e);
+            }
+        }
+
+        info!(
+            "📋 Found {} pending quotes with mintable amount",
+            pending_quotes.len()
+        );
+
+        let quote_ids: Vec<String> = pending_quotes.iter().map(|q| q.id.clone()).collect();
+
+        if quote_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let mut total_minted = 0u64;
+
+        for quote_id in quote_ids.iter() {
+            match Self::fetch_and_add_quote_to_wallet(wallet, quote_id).await {
+                Ok(_) => match wallet.mint_quote_state_mining_share(quote_id).await {
+                    Ok(quote_response) => {
+                        if quote_response.is_fully_issued() {
+                            debug!(
+                                "Quote {} is already fully issued ({}), skipping",
+                                quote_id, quote_response.amount_issued
+                            );
+                            continue;
+                        }
+
+                        let amount = quote_response.amount.unwrap_or(Amount::ZERO);
+                        let keyset_id = quote_response.keyset_id;
+
+                        let secret_key = match locking_privkey {
+                            Some(privkey_hex) => match hex::decode(privkey_hex) {
+                                Ok(privkey_bytes) => match SecretKey::from_slice(&privkey_bytes) {
+                                    Ok(sk) => sk,
+                                    Err(e) => {
+                                        error!(
+                                            "Invalid secret key format for quote {}: {}",
+                                            quote_id, e
+                                        );
+                                        continue;
+                                    }
+                                },
+                                Err(e) => {
+                                    error!(
+                                        "Failed to decode secret key hex for quote {}: {}",
+                                        quote_id, e
+                                    );
+                                    continue;
+                                }
+                            },
+                            None => {
+                                error!(
+                                    "Secret key is required for mining share minting (quote {})",
+                                    quote_id
+                                );
+                                continue;
+                            }
+                        };
+
+                        match wallet
+                            .mint_mining_share(quote_id, amount, keyset_id, secret_key)
+                            .await
+                        {
+                            Ok(proofs) => {
+                                let amount: u64 = proofs.iter().map(|p| u64::from(p.amount)).sum();
+                                total_minted += amount;
+                            }
+                            Err(e) => {
+                                warn!("Failed to mint quote {}: {}", quote_id, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("Failed to get quote details for {}: {}", quote_id, e);
+                    }
+                },
+                Err(e) => {
+                    warn!("Failed to fetch quote {} details: {}", quote_id, e);
+                }
+            }
+        }
+
+        if total_minted > 0 {
+            info!(
+                "Minted {} ehash from {} quotes",
+                total_minted,
+                quote_ids.len()
+            );
+        } else {
+            warn!("😞 No tokens were minted from any quotes");
+        }
+
+        Ok(total_minted)
+    }
+
+    async fn fetch_and_add_quote_to_wallet(wallet: &Arc<Wallet>, quote_id: &str) -> Result<()> {
+        debug!("🔍 Fetching quote {} from mint", quote_id);
+
+        let quote = wallet
+            .mint_quote_state_mining_share(quote_id)
+            .await
+            .with_context(|| format!("Failed to fetch quote {} from mint", quote_id))?;
+
+        debug!(
+            "💾 Quote {} fetched and added to wallet (state: {:?})",
+            quote_id, quote.state
+        );
+        Ok(())
     }
 }

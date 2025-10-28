@@ -55,7 +55,10 @@ pub fn process_cli_args() -> Result<TranslatorConfig, TproxyError> {
     // Deserialize settings into TranslatorConfig
     let mut config = settings.try_deserialize::<TranslatorConfig>()?;
 
-    let (minimum_difficulty, source) = if let Some(global_config_path) = args.global_config_path {
+    let mut minimum_difficulty = DEFAULT_MINIMUM_DIFFICULTY;
+    let mut source: Option<String> = None;
+
+    if let Some(global_config_path) = args.global_config_path.as_ref() {
         let global_config_str = global_config_path.to_str().ok_or_else(|| {
             error!("Invalid global configuration path.");
             TproxyError::BadCliArgs
@@ -63,36 +66,35 @@ pub fn process_cli_args() -> Result<TranslatorConfig, TproxyError> {
 
         match MinerGlobalConfig::from_path(global_config_str) {
             Ok(global) => {
+                // Fill in mint configuration from shared config when missing locally
+                if config.mint.is_none() {
+                    config.mint = Some(global.mint.clone());
+                    eprintln!(
+                        "✅ Loaded mint config from shared config: {}",
+                        global.mint.url
+                    );
+                }
+
                 if let Some(ehash) = global.ehash {
-                    (
-                        ehash.minimum_difficulty,
-                        Some(global_config_str.to_string()),
-                    )
+                    minimum_difficulty = ehash.minimum_difficulty;
                 } else {
                     eprintln!(
                         "Warning: no [ehash] section found in shared config {}; falling back to default difficulty {}",
                         global_config_str, DEFAULT_MINIMUM_DIFFICULTY
                     );
-                    (
-                        DEFAULT_MINIMUM_DIFFICULTY,
-                        Some(global_config_str.to_string()),
-                    )
                 }
+
+                source = Some(global_config_str.to_string());
             }
             Err(err) => {
                 eprintln!(
                     "Warning: failed to parse shared global config {} ({}); using default difficulty {}",
                     global_config_str, err, DEFAULT_MINIMUM_DIFFICULTY
                 );
-                (
-                    DEFAULT_MINIMUM_DIFFICULTY,
-                    Some(global_config_str.to_string()),
-                )
+                source = Some(global_config_str.to_string());
             }
         }
-    } else {
-        (DEFAULT_MINIMUM_DIFFICULTY, None)
-    };
+    }
 
     config
         .downstream_difficulty_config

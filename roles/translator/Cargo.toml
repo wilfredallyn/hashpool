@@ -41,6 +41,7 @@ bip39 = "2.0"
 anyhow = "1.0"
 binary_sv2 = { path = "../../protocols/v2/binary-sv2" }
 const_sv2 = { path = "../../protocols/v2/const-sv2" }
+hex = "0.4"
 
 
 [dev-dependencies]
