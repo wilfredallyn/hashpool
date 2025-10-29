@@ -23,6 +23,13 @@ pub enum QuoteBuildError {
     InvalidHeaderHashLength(usize),
 }
 
+/// Errors that can occur when validating a header hash
+#[derive(Debug, Error)]
+pub enum HeaderHashError {
+    #[error("invalid header hash length: expected 32 bytes, got {0}")]
+    InvalidLength(usize),
+}
+
 /// Build a `MintQuoteRequest` using the canonical "HASH" unit and the provided
 /// share metadata.
 pub fn build_mint_quote_request(
@@ -114,6 +121,26 @@ impl ParsedMintQuoteRequest {
             pubkey,
         })
     }
+}
+
+/// Validates that a header hash is exactly 32 bytes
+///
+/// Header hashes in ehash are always SHA-256 hashes, which are 32 bytes.
+/// This function validates that the provided bytes meet this requirement.
+///
+/// # Arguments
+/// * `header_hash` - The header hash bytes to validate
+///
+/// # Returns
+/// * `Ok([u8; 32])` - Valid header hash as fixed-size array
+/// * `Err(HeaderHashError)` - Invalid header hash length
+pub fn validate_header_hash(header_hash: &[u8]) -> Result<[u8; 32], HeaderHashError> {
+    if header_hash.len() != 32 {
+        return Err(HeaderHashError::InvalidLength(header_hash.len()));
+    }
+    let mut hash = [0u8; 32];
+    hash.copy_from_slice(header_hash);
+    Ok(hash)
 }
 
 /// Parse an incoming SV2 mint quote request payload into a validated structure.

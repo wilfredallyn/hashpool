@@ -21,6 +21,46 @@ This document prioritizes cleanup tasks that implement the **callback-based arch
 
 ## Implementation Status
 
+### ✅ Task #1: Extract Share Acceptance Callback System - COMPLETED
+
+**Completed**: October 29, 2025
+
+**What was done**:
+1. Created `roles-utils/share-hooks` crate with:
+   - `ShareAcceptanceHook` trait for async share event callbacks
+   - `ShareAcceptedEvent` struct with comprehensive share metadata
+   - `HookError` enum for graceful error handling
+   - 14 comprehensive unit tests covering all error cases and hook behaviors
+
+2. Refactored `Pool` struct to:
+   - Added `share_hooks: Vec<Arc<dyn ShareAcceptanceHook>>` field
+   - Initialized hooks as empty vec in `Pool::start()`
+   - Prepared hook infrastructure for share acceptance events
+
+3. Implemented `QuoteDispatchHook` in `pool/src/lib/mining_pool/quote_dispatch_hook.rs`:
+   - Implements `ShareAcceptanceHook` trait
+   - Wraps existing quote dispatch logic
+   - Ready for integration with message_handler share validation
+
+**Code Changes**:
+- New: `roles-utils/share-hooks/src/lib.rs` (+362 LOC, 14 tests)
+- New: `pool/src/lib/mining_pool/quote_dispatch_hook.rs` (+123 LOC)
+- Modified: `pool/src/lib/mining_pool/mod.rs` (+1 field, +1 import)
+- Modified: `roles/Cargo.toml` (added share-hooks to workspace members)
+- Modified: `pool/Cargo.toml` (added dependencies)
+
+**Test Results**:
+- ✅ 14/14 share-hooks tests passing
+- ✅ 15/15 pool_sv2 tests passing (includes new quote_dispatch_hook test)
+
+**Architectural Impact**:
+- Pool complexity unchanged (hooks are independent)
+- Foundation for non-fatal hook execution
+- Enables future share event subscribers without modifying pool logic
+- Clean separation between share validation and event handling
+
+---
+
 ### ✅ Task #2: Add Error Handling to Quote Dispatch System - COMPLETED
 
 **Completed**: October 29, 2025

@@ -34,6 +34,7 @@ use nohash_hasher::BuildNoHashHasher;
 use pool_stats;
 use quote_dispatcher::QuoteDispatcher;
 use secp256k1;
+use share_hooks;
 use std::{
     collections::HashMap,
     convert::TryInto,
@@ -88,6 +89,9 @@ pub mod mint_connection;
 
 // Module for periodic quote polling and notification delivery
 pub mod quote_poller;
+
+// Module for quote dispatch hook implementation
+pub mod quote_dispatch_hook;
 
 fn derive_min_hashrate_from_difficulty(min_bits: u32, shares_per_minute: f32) -> f32 {
     if shares_per_minute <= f32::EPSILON {
@@ -193,6 +197,9 @@ pub struct Pool {
     solution_sender: Sender<SubmitSolution<'static>>,
     // Quote dispatcher handle for routing accepted shares to the mint messaging hub
     quote_dispatcher: Option<Arc<QuoteDispatcher>>,
+    // Hooks that are called when shares are accepted
+    // Non-fatal - errors in hooks don't fail share validation
+    pub share_hooks: Vec<Arc<dyn share_hooks::ShareAcceptanceHook>>,
     // Flag indicating whether at least one `NewTemplate` has been received and processed.
     // Might be used to ensure initial jobs are sent before accepting solutions??.
     new_template_processed: bool,
@@ -1187,6 +1194,7 @@ impl Pool {
             downstreams: HashMap::with_hasher(BuildNoHashHasher::default()),
             solution_sender,
             quote_dispatcher,
+            share_hooks: Vec::new(),
             new_template_processed: false,
             downstream_id_factory: IdFactory::new(),
             status_tx: status_tx.clone(),

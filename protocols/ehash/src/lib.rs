@@ -7,6 +7,7 @@
 use std::fmt;
 
 pub mod keyset;
+pub mod locking_key;
 pub mod message_type;
 pub mod quote;
 pub mod share;
@@ -17,10 +18,12 @@ pub use keyset::{
     build_cdk_keyset, calculate_keyset_id, keyset_from_sv2_bytes, signing_keys_from_cdk,
     signing_keys_to_cdk, KeysetConversionError, KeysetId, SigningKey,
 };
+pub use locking_key::{parse_locking_key, LockingKeyError};
 pub use message_type::{MessageType, MessageTypeError, MintQuoteMessage};
 pub use quote::{
     build_mint_quote_request, mint_quote_response_from_cdk, parse_mint_quote_request,
-    ParsedMintQuoteRequest, QuoteBuildError, QuoteConversionError, QuoteParseError,
+    validate_header_hash, HeaderHashError, ParsedMintQuoteRequest, QuoteBuildError,
+    QuoteConversionError, QuoteParseError,
 };
 pub use share::{ShareHash, ShareHashError};
 pub use sv2::{Sv2KeySet, Sv2KeySetWire, Sv2SigningKey};

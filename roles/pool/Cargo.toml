@@ -18,6 +18,7 @@ path = "src/lib/mod.rs"
 
 [dependencies]
 async-channel = "1.5.1"
+async-trait = "0.1"
 stratum-common = { path = "../../common", features = ["with_network_helpers"] }
 buffer_sv2 = { path = "../../utils/buffer" }
 rand = "0.8.4"
@@ -33,6 +34,7 @@ key-utils = { path = "../../utils/key-utils" }
 config_helpers_sv2 = { path = "../roles-utils/config-helpers" }
 clap = { version = "4.5.39", features = ["derive"] }
 mint_pool_messaging = { path = "../roles-utils/mint-pool-messaging" }
+share-hooks = { path = "../roles-utils/share-hooks" }
 quote-dispatcher = { path = "../roles-utils/quote-dispatcher" }
 pool-stats = { path = "../roles-utils/pool-stats" }
 stats = { path = "../roles-utils/stats" }
