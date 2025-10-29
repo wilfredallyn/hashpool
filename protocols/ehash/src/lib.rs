@@ -4,6 +4,8 @@
 //! Cashu-specific logic that needs to live inside the upstream Stratum V2
 //! protocol crates.
 
+use std::fmt;
+
 pub mod keyset;
 pub mod message_type;
 pub mod quote;
@@ -23,3 +25,59 @@ pub use quote::{
 pub use share::{ShareHash, ShareHashError};
 pub use sv2::{Sv2KeySet, Sv2KeySetWire, Sv2SigningKey};
 pub use work::{calculate_difficulty, calculate_ehash_amount};
+
+/// Errors that can occur during ehash quote dispatch operations.
+///
+/// These errors represent failures in the quote dispatch pipeline, from
+/// locking key validation through quote submission to the mint service.
+#[derive(Debug, Clone)]
+pub enum QuoteDispatchError {
+    /// Locking key is missing for the channel
+    MissingLockingKey(u32),
+    /// Locking key has invalid format or length
+    InvalidLockingKeyFormat { channel_id: u32, length: usize },
+    /// Failed to parse locking key as a compressed public key
+    InvalidLockingKey { channel_id: u32, reason: String },
+    /// Quote dispatcher is not available
+    MintDispatcherUnavailable,
+    /// Quote dispatch failed with the given error message
+    QuoteDispatchFailed(String),
+}
+
+impl fmt::Display for QuoteDispatchError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::MissingLockingKey(channel_id) => {
+                write!(f, "Missing locking key for channel {}", channel_id)
+            }
+            Self::InvalidLockingKeyFormat {
+                channel_id,
+                length,
+            } => {
+                write!(
+                    f,
+                    "Invalid locking key format for channel {}: expected 33 bytes, got {}",
+                    channel_id, length
+                )
+            }
+            Self::InvalidLockingKey {
+                channel_id,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "Failed to parse locking key for channel {}: {}",
+                    channel_id, reason
+                )
+            }
+            Self::MintDispatcherUnavailable => {
+                write!(f, "Mint dispatcher is not available")
+            }
+            Self::QuoteDispatchFailed(msg) => {
+                write!(f, "Quote dispatch failed: {}", msg)
+            }
+        }
+    }
+}
+
+impl std::error::Error for QuoteDispatchError {}

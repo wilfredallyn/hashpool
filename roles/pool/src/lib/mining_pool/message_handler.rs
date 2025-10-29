@@ -7,6 +7,7 @@
 
 use super::super::mining_pool::Downstream;
 use binary_sv2::Deserialize;
+use ehash::QuoteDispatchError;
 use mint_quote_sv2::CompressedPubKey;
 use quote_dispatcher::QuoteDispatcher;
 use std::{
@@ -34,78 +35,77 @@ use stratum_common::roles_logic_sv2::{
 };
 use tracing::{debug, error, info, warn};
 
-fn dispatch_quote(
+/// Attempts to dispatch a quote for an accepted share to the mint service.
+///
+/// This is an async operation that:
+/// 1. Retrieves or uses the provided locking key for attribution
+/// 2. Validates the key format (must be 33 bytes)
+/// 3. Parses the key as a compressed public key
+/// 4. Submits the quote to the dispatcher
+///
+/// Returns `Ok(())` on success or a `QuoteDispatchError` if any step fails.
+async fn dispatch_quote(
     dispatcher: Arc<QuoteDispatcher>,
     mint_manager: Arc<super::mint_integration::MintIntegrationManager>,
     channel_id: u32,
     sequence_number: u32,
     header_hash: [u8; 32],
     locking_key_hint: Option<Vec<u8>>,
-) {
+) -> Result<(), QuoteDispatchError> {
     let header_hash_bytes = header_hash;
-    tokio::spawn(async move {
-        let locking_key_bytes = if let Some(bytes) = locking_key_hint {
-            Some(bytes)
-        } else {
-            mint_manager
-                .get_channel_context(channel_id)
-                .await
-                .and_then(|ctx| ctx.locking_key_bytes.clone())
-        };
 
-        let Some(bytes) = locking_key_bytes else {
-            debug!(
-                "Skipping quote creation: missing locking key for channel {}",
-                channel_id
-            );
-            return;
-        };
+    // Get locking key from hint or mint manager
+    let locking_key_bytes = if let Some(bytes) = locking_key_hint {
+        Some(bytes)
+    } else {
+        mint_manager
+            .get_channel_context(channel_id)
+            .await
+            .and_then(|ctx| ctx.locking_key_bytes.clone())
+    };
 
-        if bytes.len() != 33 {
-            warn!(
-                "Invalid locking key length ({} bytes) for channel {}",
-                bytes.len(),
-                channel_id
-            );
-            return;
+    // Validate that we have a locking key
+    let bytes = locking_key_bytes.ok_or(QuoteDispatchError::MissingLockingKey(channel_id))?;
+
+    // Validate key length
+    if bytes.len() != 33 {
+        return Err(QuoteDispatchError::InvalidLockingKeyFormat {
+            channel_id,
+            length: bytes.len(),
+        });
+    }
+
+    // Parse locking key as compressed public key
+    let mut key_bytes = [0u8; 33];
+    key_bytes.copy_from_slice(&bytes);
+    let mut encoded = [0u8; 34];
+    encoded[0] = key_bytes.len() as u8;
+    encoded[1..].copy_from_slice(&key_bytes);
+
+    let pubkey = CompressedPubKey::from_bytes(&mut encoded[..]).map_err(|e| {
+        QuoteDispatchError::InvalidLockingKey {
+            channel_id,
+            reason: format!("{:?}", e),
         }
+    })?;
 
-        let mut key_bytes = [0u8; 33];
-        key_bytes.copy_from_slice(&bytes);
-        let mut encoded = [0u8; 34];
-        encoded[0] = key_bytes.len() as u8;
-        encoded[1..].copy_from_slice(&key_bytes);
-        let pubkey = match CompressedPubKey::from_bytes(&mut encoded[..]) {
-            Ok(key) => key.into_static(),
-            Err(e) => {
-                error!(
-                    "Failed to parse locking key for channel {}: {:?}",
-                    channel_id, e
-                );
-                return;
-            }
-        };
+    // Submit quote to dispatcher
+    dispatcher
+        .submit_quote(&header_hash_bytes, pubkey.into_static(), channel_id, sequence_number)
+        .map_err(|e| QuoteDispatchError::QuoteDispatchFailed(e.to_string()))?;
 
-        if let Err(e) =
-            dispatcher.submit_quote(&header_hash_bytes, pubkey, channel_id, sequence_number)
-        {
-            error!(
-                "Failed to dispatch mint quote for channel {} seq {}: {}",
-                channel_id, sequence_number, e
-            );
-        } else {
-            debug!(
-                "Queued mint quote via dispatcher: channel={}, seq={}",
-                channel_id, sequence_number
-            );
-        }
-    });
+    Ok(())
 }
 
 /// Helper function to send a quote request for an accepted share.
 ///
-/// Creates a `ShareQuoteRequest` from the share data and sends it to the quote dispatcher
-/// channel if it's configured. This enables quote creation for each accepted share.
+/// Spawns an async task to dispatch a quote for an accepted share. The task:
+/// 1. Dispatches the quote to the mint service if dispatcher is configured
+/// 2. Logs errors that occur (e.g., missing/invalid locking key, dispatch failure)
+/// 3. Does NOT fail the share validation if dispatch fails (non-fatal)
+///
+/// This ensures quote failures don't break the mining protocol while still
+/// providing visibility into any issues via logging.
 fn send_share_quote_request(
     downstream: &Downstream,
     channel_id: u32,
@@ -114,14 +114,34 @@ fn send_share_quote_request(
     _m: &SubmitSharesStandard,
 ) {
     if let Some(dispatcher) = downstream.quote_dispatcher.clone() {
-        dispatch_quote(
-            dispatcher,
-            downstream.mint_manager.clone(),
-            channel_id,
-            sequence_number,
-            header_hash,
-            downstream.locking_key_bytes.clone(),
-        );
+        let mint_manager = downstream.mint_manager.clone();
+        let locking_key_bytes = downstream.locking_key_bytes.clone();
+
+        tokio::spawn(async move {
+            match dispatch_quote(
+                dispatcher,
+                mint_manager,
+                channel_id,
+                sequence_number,
+                header_hash,
+                locking_key_bytes,
+            )
+            .await
+            {
+                Ok(()) => {
+                    debug!(
+                        "Successfully queued mint quote via dispatcher: channel={}, seq={}",
+                        channel_id, sequence_number
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "Quote dispatch error for channel {} (seq {}): {}",
+                        channel_id, sequence_number, e
+                    );
+                }
+            }
+        });
     } else {
         debug!(
             "Quote dispatcher not configured; skipping quote for channel {}",
@@ -132,7 +152,10 @@ fn send_share_quote_request(
 
 /// Helper function to send a quote request for an extended share.
 ///
-/// Similar to `send_share_quote_request` but for extended channel shares.
+/// Spawns an async task to dispatch a quote for an extended share. Similar to
+/// `send_share_quote_request` but for extended mining channels.
+///
+/// Quote dispatch errors are logged but don't affect share validation.
 fn send_extended_share_quote_request(
     downstream: &Downstream,
     channel_id: u32,
@@ -141,14 +164,34 @@ fn send_extended_share_quote_request(
     _m: &SubmitSharesExtended,
 ) {
     if let Some(dispatcher) = downstream.quote_dispatcher.clone() {
-        dispatch_quote(
-            dispatcher,
-            downstream.mint_manager.clone(),
-            channel_id,
-            sequence_number,
-            header_hash,
-            downstream.locking_key_bytes.clone(),
-        );
+        let mint_manager = downstream.mint_manager.clone();
+        let locking_key_bytes = downstream.locking_key_bytes.clone();
+
+        tokio::spawn(async move {
+            match dispatch_quote(
+                dispatcher,
+                mint_manager,
+                channel_id,
+                sequence_number,
+                header_hash,
+                locking_key_bytes,
+            )
+            .await
+            {
+                Ok(()) => {
+                    debug!(
+                        "Successfully queued mint quote via dispatcher (extended): channel={}, seq={}",
+                        channel_id, sequence_number
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "Extended quote dispatch error for channel {} (seq {}): {}",
+                        channel_id, sequence_number, e
+                    );
+                }
+            }
+        });
     } else {
         debug!(
             "Quote dispatcher not configured; skipping extended quote for channel {}",
@@ -1228,5 +1271,56 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
         self.standard_channels.remove(&m.channel_id);
         self.vardiff.remove(&m.channel_id);
         Ok(SendTo::None(None))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quote_dispatch_error_missing_locking_key() {
+        let error = QuoteDispatchError::MissingLockingKey(42);
+        assert_eq!(error.to_string(), "Missing locking key for channel 42");
+    }
+
+    #[test]
+    fn test_quote_dispatch_error_invalid_locking_key_format() {
+        let error = QuoteDispatchError::InvalidLockingKeyFormat {
+            channel_id: 42,
+            length: 32,
+        };
+        assert!(error.to_string().contains("channel 42"));
+        assert!(error.to_string().contains("expected 33 bytes"));
+        assert!(error.to_string().contains("got 32"));
+    }
+
+    #[test]
+    fn test_quote_dispatch_error_invalid_locking_key() {
+        let error = QuoteDispatchError::InvalidLockingKey {
+            channel_id: 42,
+            reason: "invalid checksum".to_string(),
+        };
+        assert!(error.to_string().contains("channel 42"));
+        assert!(error.to_string().contains("invalid checksum"));
+    }
+
+    #[test]
+    fn test_quote_dispatch_error_mint_dispatcher_unavailable() {
+        let error = QuoteDispatchError::MintDispatcherUnavailable;
+        assert_eq!(error.to_string(), "Mint dispatcher is not available");
+    }
+
+    #[test]
+    fn test_quote_dispatch_error_dispatch_failed() {
+        let error = QuoteDispatchError::QuoteDispatchFailed("network timeout".to_string());
+        assert!(error.to_string().contains("Quote dispatch failed"));
+        assert!(error.to_string().contains("network timeout"));
+    }
+
+    #[test]
+    fn test_quote_dispatch_error_is_error_trait() {
+        let error = QuoteDispatchError::MissingLockingKey(1);
+        let _: &dyn std::error::Error = &error;
     }
 }
