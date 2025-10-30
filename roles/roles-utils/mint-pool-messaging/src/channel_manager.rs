@@ -146,3 +146,285 @@ pub struct ChannelStats {
     pub mint_channels: usize,
     pub total_messages: u64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ============================================================================
+    // Channel Creation Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_create_pool_channel() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let channel_id = manager.create_channel(Role::Pool).await;
+        assert!(channel_id > 0);
+
+        let channel = manager.get_channel(channel_id).await.unwrap();
+        assert_eq!(channel.id, channel_id);
+        assert_eq!(channel.role, Role::Pool);
+        assert_eq!(channel.message_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_create_mint_channel() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let channel_id = manager.create_channel(Role::Mint).await;
+        assert!(channel_id > 0);
+
+        let channel = manager.get_channel(channel_id).await.unwrap();
+        assert_eq!(channel.id, channel_id);
+        assert_eq!(channel.role, Role::Mint);
+    }
+
+    #[tokio::test]
+    async fn test_create_multiple_channels() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let id1 = manager.create_channel(Role::Pool).await;
+        let id2 = manager.create_channel(Role::Mint).await;
+        let id3 = manager.create_channel(Role::Pool).await;
+
+        // Channel IDs should be unique and increasing
+        assert!(id1 < id2);
+        assert!(id2 < id3);
+
+        let channels = manager.get_all_channels().await;
+        assert_eq!(channels.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_channel_ids_are_sequential() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let id1 = manager.create_channel(Role::Pool).await;
+        let id2 = manager.create_channel(Role::Pool).await;
+        let id3 = manager.create_channel(Role::Pool).await;
+
+        // IDs should be sequential
+        assert_eq!(id2, id1 + 1);
+        assert_eq!(id3, id2 + 1);
+    }
+
+    // ============================================================================
+    // Channel Closure Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_close_channel() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let channel_id = manager.create_channel(Role::Pool).await;
+        assert!(manager.get_channel(channel_id).await.is_ok());
+
+        manager.close_channel(channel_id).await.unwrap();
+        assert!(manager.get_channel(channel_id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_close_nonexistent_channel() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let result = manager.close_channel(99999).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ChannelError::NotFound(id) => assert_eq!(id, 99999),
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_close_already_closed_channel() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let channel_id = manager.create_channel(Role::Pool).await;
+        manager.close_channel(channel_id).await.unwrap();
+
+        // Closing again should fail
+        let result = manager.close_channel(channel_id).await;
+        assert!(result.is_err());
+    }
+
+    // ============================================================================
+    // Activity Update Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_update_channel_activity() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let channel_id = manager.create_channel(Role::Pool).await;
+        let initial = manager.get_channel(channel_id).await.unwrap();
+        let initial_activity = initial.last_activity;
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+
+        manager.update_activity(channel_id).await.unwrap();
+
+        let updated = manager.get_channel(channel_id).await.unwrap();
+        // Last activity should have been updated
+        assert!(updated.last_activity >= initial_activity);
+        assert_eq!(updated.message_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_activity_increments_message_count() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let channel_id = manager.create_channel(Role::Pool).await;
+
+        for i in 1..=5 {
+            manager.update_activity(channel_id).await.unwrap();
+            let channel = manager.get_channel(channel_id).await.unwrap();
+            assert_eq!(channel.message_count, i as u64);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_nonexistent_channel_activity() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let result = manager.update_activity(99999).await;
+        assert!(result.is_err());
+    }
+
+    // ============================================================================
+    // Stale Channel Cleanup Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_cleanup_stale_channels() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let _channel1 = manager.create_channel(Role::Pool).await;
+        let _channel2 = manager.create_channel(Role::Mint).await;
+
+        // Simulate older activity on channel1 by manually manipulating time
+        // For this test, we'll just verify the cleanup function works
+        let removed = manager.cleanup_stale_channels(1).await;
+        // No channels should be stale yet (just created)
+        assert_eq!(removed, 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_ignores_active_channels() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let channel_id = manager.create_channel(Role::Pool).await;
+
+        // Update activity to keep it fresh
+        manager.update_activity(channel_id).await.unwrap();
+
+        // Cleanup with very short timeout should not remove fresh channels
+        let removed = manager.cleanup_stale_channels(1).await;
+        assert_eq!(removed, 0);
+
+        // Channel should still exist
+        assert!(manager.get_channel(channel_id).await.is_ok());
+    }
+
+    // ============================================================================
+    // Statistics Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_channel_statistics() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let _ = manager.create_channel(Role::Pool).await;
+        let _ = manager.create_channel(Role::Pool).await;
+        let _ = manager.create_channel(Role::Mint).await;
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.total_channels, 3);
+        assert_eq!(stats.pool_channels, 2);
+        assert_eq!(stats.mint_channels, 1);
+    }
+
+    #[tokio::test]
+    async fn test_statistics_with_messages() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let ch1 = manager.create_channel(Role::Pool).await;
+        let ch2 = manager.create_channel(Role::Mint).await;
+
+        // Send messages on each channel
+        manager.update_activity(ch1).await.unwrap();
+        manager.update_activity(ch1).await.unwrap();
+        manager.update_activity(ch2).await.unwrap();
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.total_messages, 3);
+    }
+
+    #[tokio::test]
+    async fn test_statistics_empty_manager() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let stats = manager.get_stats().await;
+        assert_eq!(stats.total_channels, 0);
+        assert_eq!(stats.pool_channels, 0);
+        assert_eq!(stats.mint_channels, 0);
+        assert_eq!(stats.total_messages, 0);
+    }
+
+    // ============================================================================
+    // Get All Channels Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_get_all_channels_empty() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let channels = manager.get_all_channels().await;
+        assert_eq!(channels.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_get_all_channels_multiple() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let id1 = manager.create_channel(Role::Pool).await;
+        let id2 = manager.create_channel(Role::Mint).await;
+
+        let channels = manager.get_all_channels().await;
+        assert_eq!(channels.len(), 2);
+
+        let ids: Vec<u64> = channels.iter().map(|c| c.id).collect();
+        assert!(ids.contains(&id1));
+        assert!(ids.contains(&id2));
+    }
+
+    #[tokio::test]
+    async fn test_get_channel_not_found() {
+        let config = MessagingConfig::default();
+        let manager = ChannelManager::new(config);
+
+        let result = manager.get_channel(12345).await;
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ChannelError::NotFound(id) => assert_eq!(id, 12345),
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+}

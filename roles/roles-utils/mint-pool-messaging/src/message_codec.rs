@@ -26,3 +26,24 @@ impl MessageCodec {
         MessageType::error()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ============================================================================
+    // Message Type Tests
+    // ============================================================================
+
+    #[test]
+    fn test_message_types_are_distinct() {
+        let request = MessageCodec::get_request_type();
+        let response = MessageCodec::get_response_type();
+        let error = MessageCodec::get_error_type();
+
+        // Message types should be different from each other
+        assert_ne!(request, response);
+        assert_ne!(response, error);
+        assert_ne!(request, error);
+    }
+}

@@ -382,4 +382,310 @@ mod tests {
         let stats = hub.get_stats().await;
         assert_eq!(stats.pending_quotes, 0);
     }
+
+    // ============================================================================
+    // Connection Management Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_register_pool_connection() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+
+        hub.register_connection("pool-1".to_string(), Role::Pool)
+            .await;
+
+        let stats = hub.get_stats().await;
+        assert_eq!(stats.total_connections, 1);
+        assert_eq!(stats.pool_connections, 1);
+        assert_eq!(stats.mint_connections, 0);
+    }
+
+    #[tokio::test]
+    async fn test_register_mint_connection() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+
+        hub.register_connection("mint-1".to_string(), Role::Mint)
+            .await;
+
+        let stats = hub.get_stats().await;
+        assert_eq!(stats.total_connections, 1);
+        assert_eq!(stats.pool_connections, 0);
+        assert_eq!(stats.mint_connections, 1);
+    }
+
+    #[tokio::test]
+    async fn test_register_multiple_connections() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+
+        hub.register_connection("pool-1".to_string(), Role::Pool)
+            .await;
+        hub.register_connection("pool-2".to_string(), Role::Pool)
+            .await;
+        hub.register_connection("mint-1".to_string(), Role::Mint)
+            .await;
+
+        let stats = hub.get_stats().await;
+        assert_eq!(stats.total_connections, 3);
+        assert_eq!(stats.pool_connections, 2);
+        assert_eq!(stats.mint_connections, 1);
+    }
+
+    #[tokio::test]
+    async fn test_unregister_connection() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+
+        hub.register_connection("pool-1".to_string(), Role::Pool)
+            .await;
+        assert_eq!(hub.get_stats().await.total_connections, 1);
+
+        hub.unregister_connection("pool-1").await;
+        assert_eq!(hub.get_stats().await.total_connections, 0);
+    }
+
+    // ============================================================================
+    // Quote Request Subscription Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_subscribe_quote_requests() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+        let mut rx = hub.subscribe_quote_requests().await.unwrap();
+
+        let hash = [0xBBu8; 32];
+        let parsed = crate::build_parsed_quote_request(100, &hash, locking_key()).unwrap();
+        let context = PendingQuoteContext {
+            channel_id: 1,
+            sequence_number: 1,
+            amount: 100,
+        };
+
+        hub.send_quote_request(parsed.clone(), context).await.unwrap();
+
+        let received = rx.recv().await.unwrap();
+        assert_eq!(received.share_hash, parsed.share_hash);
+        assert_eq!(received.request.amount, 100);
+    }
+
+    #[tokio::test]
+    async fn test_multiple_subscribers_receive_requests() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+        let mut rx1 = hub.subscribe_quote_requests().await.unwrap();
+        let mut rx2 = hub.subscribe_quote_requests().await.unwrap();
+
+        let hash = [0xCCu8; 32];
+        let parsed = crate::build_parsed_quote_request(50, &hash, locking_key()).unwrap();
+        let context = PendingQuoteContext {
+            channel_id: 1,
+            sequence_number: 1,
+            amount: 50,
+        };
+
+        hub.send_quote_request(parsed.clone(), context).await.unwrap();
+
+        let recv1 = rx1.recv().await.unwrap();
+        let recv2 = rx2.recv().await.unwrap();
+
+        assert_eq!(recv1.share_hash, parsed.share_hash);
+        assert_eq!(recv2.share_hash, parsed.share_hash);
+    }
+
+    // ============================================================================
+    // Quote Response Subscription Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_subscribe_quote_responses() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+        let mut rx = hub.subscribe_quote_responses().await.unwrap();
+
+        let hash = [0xDDu8; 32];
+        let parsed = crate::build_parsed_quote_request(200, &hash, locking_key()).unwrap();
+        let context = PendingQuoteContext {
+            channel_id: 2,
+            sequence_number: 2,
+            amount: 200,
+        };
+
+        hub.send_quote_request(parsed.clone(), context).await.unwrap();
+
+        let quote_id = Str0255::try_from("RESP-123".to_string()).unwrap();
+        let response = MintQuoteResponse {
+            quote_id,
+            header_hash: parsed.share_hash.into_u256().unwrap(),
+        };
+
+        let _event = hub.send_quote_response(response).await.unwrap();
+
+        let received = rx.recv().await.unwrap();
+        assert_eq!(received.share_hash, parsed.share_hash);
+        assert!(received.context.is_some());
+    }
+
+    // ============================================================================
+    // Quote Error Subscription Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_subscribe_quote_errors() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+        let mut rx = hub.subscribe_quote_errors().await.unwrap();
+
+        let error = MintQuoteError {
+            error_code: 0x01,
+            error_message: Str0255::try_from("test error".to_string()).unwrap(),
+        };
+
+        hub.send_quote_error(error.clone()).await.unwrap();
+
+        let received = rx.recv().await.unwrap();
+        assert_eq!(received.error_code, 0x01);
+    }
+
+    // ============================================================================
+    // Pending Quote Tracking Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_pending_quotes_count() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+
+        for i in 0..3 {
+            let hash = [i as u8; 32];
+            let parsed = crate::build_parsed_quote_request(100 + i as u64, &hash, locking_key())
+                .unwrap();
+            let context = PendingQuoteContext {
+                channel_id: i as u32,
+                sequence_number: i as u32,
+                amount: 100 + i as u64,
+            };
+
+            hub.send_quote_request(parsed, context).await.unwrap();
+        }
+
+        let stats = hub.get_stats().await;
+        assert_eq!(stats.pending_quotes, 3);
+    }
+
+    #[tokio::test]
+    async fn test_pending_quote_removed_on_response() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+
+        let hash = [0xEEu8; 32];
+        let parsed = crate::build_parsed_quote_request(300, &hash, locking_key()).unwrap();
+        let context = PendingQuoteContext {
+            channel_id: 3,
+            sequence_number: 3,
+            amount: 300,
+        };
+
+        hub.send_quote_request(parsed.clone(), context).await.unwrap();
+        assert_eq!(hub.get_stats().await.pending_quotes, 1);
+
+        let response = MintQuoteResponse {
+            quote_id: Str0255::try_from("RES".to_string()).unwrap(),
+            header_hash: parsed.share_hash.into_u256().unwrap(),
+        };
+
+        hub.send_quote_response(response).await.unwrap();
+        assert_eq!(hub.get_stats().await.pending_quotes, 0);
+    }
+
+    #[tokio::test]
+    async fn test_response_without_pending_context() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+
+        // Create a hash and convert it to the proper type
+        let hash = [0xFFu8; 32];
+        let response = MintQuoteResponse {
+            quote_id: Str0255::try_from("UNKNOWN".to_string()).unwrap(),
+            header_hash: hash.into(),
+        };
+
+        let _event = hub.send_quote_response(response).await.unwrap();
+        // Event should have no context since the quote wasn't pending
+        // We don't use _event, so prefixed with underscore
+    }
+
+    // ============================================================================
+    // Message Hub Statistics Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_hub_statistics_initial() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+
+        let stats = hub.get_stats().await;
+        assert_eq!(stats.total_connections, 0);
+        assert_eq!(stats.pool_connections, 0);
+        assert_eq!(stats.mint_connections, 0);
+        assert_eq!(stats.pending_quotes, 0);
+        assert_eq!(stats.oldest_pending_ms, None);
+    }
+
+    #[tokio::test]
+    async fn test_hub_statistics_with_subscribers() {
+        let hub = MintPoolMessageHub::new(MessagingConfig::default());
+
+        let _rx1 = hub.subscribe_quote_requests().await.unwrap();
+        let _rx2 = hub.subscribe_quote_responses().await.unwrap();
+
+        let stats = hub.get_stats().await;
+        // Subscriber count should reflect active subscriptions
+        assert!(stats.quote_request_subscribers > 0);
+        assert!(stats.quote_response_subscribers > 0);
+    }
+
+    // ============================================================================
+    // MintQuoteResponseEvent Tests
+    // ============================================================================
+
+    #[test]
+    fn test_response_event_creation() {
+        let quote_id = Str0255::try_from("EVENT-1".to_string()).unwrap();
+        let hash = [0x11u8; 32];
+        let response = MintQuoteResponse {
+            quote_id,
+            header_hash: hash.into(),
+        };
+
+        let event = MintQuoteResponseEvent::new(response, None).unwrap();
+        assert!(event.context.is_none());
+    }
+
+    #[test]
+    fn test_response_event_from_parts() {
+        let quote_id = Str0255::try_from("EVENT-2".to_string()).unwrap();
+        let hash = [0x22u8; 32];
+        let response = MintQuoteResponse {
+            quote_id,
+            header_hash: hash.into(),
+        };
+
+        let share_hash = ShareHash::new(hash);
+        let event = MintQuoteResponseEvent::from_parts(response, share_hash, None);
+        assert!(event.context.is_none());
+    }
+
+    #[test]
+    fn test_response_event_with_context() {
+        let quote_id = Str0255::try_from("EVENT-3".to_string()).unwrap();
+        let hash = [0x33u8; 32];
+        let response = MintQuoteResponse {
+            quote_id,
+            header_hash: hash.into(),
+        };
+
+        let context = PendingQuoteContext {
+            channel_id: 10,
+            sequence_number: 20,
+            amount: 5000,
+        };
+
+        let event = MintQuoteResponseEvent::new(response, Some(context.clone())).unwrap();
+        assert!(event.context.is_some());
+        let retrieved = event.context().unwrap();
+        assert_eq!(retrieved.channel_id, 10);
+        assert_eq!(retrieved.sequence_number, 20);
+        assert_eq!(retrieved.amount, 5000);
+    }
 }

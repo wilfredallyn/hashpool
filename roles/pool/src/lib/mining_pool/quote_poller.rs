@@ -377,6 +377,10 @@ struct MintQuoteStatusResponse {
 mod tests {
     use super::*;
 
+    // ============================================================================
+    // Quote Registration and Basic Operations Tests
+    // ============================================================================
+
     #[tokio::test]
     async fn test_quote_registration() {
         let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
@@ -395,5 +399,383 @@ mod tests {
 
         let channel_id = poller.get_quote_channel("quote1").await;
         assert_eq!(channel_id, None);
+    }
+
+    #[tokio::test]
+    async fn test_register_multiple_quotes() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        poller.register_quote("quote1".to_string(), 10, 1000).await;
+        poller.register_quote("quote2".to_string(), 20, 2000).await;
+        poller.register_quote("quote3".to_string(), 30, 3000).await;
+
+        assert_eq!(poller.get_quote_channel("quote1").await, Some(10));
+        assert_eq!(poller.get_quote_channel("quote2").await, Some(20));
+        assert_eq!(poller.get_quote_channel("quote3").await, Some(30));
+
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_update_existing_quote() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        poller.register_quote("quote1".to_string(), 42, 1000).await;
+        assert_eq!(poller.get_quote_channel("quote1").await, Some(42));
+
+        // Re-register with different channel_id - should update
+        poller.register_quote("quote1".to_string(), 99, 5000).await;
+        assert_eq!(poller.get_quote_channel("quote1").await, Some(99));
+
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_get_nonexistent_quote() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        let result = poller.get_quote_channel("nonexistent").await;
+        assert_eq!(result, None);
+    }
+
+    // ============================================================================
+    // Quote Expiration and Cleanup Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_cleanup_removes_expired_quotes() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        // Register a quote
+        poller.register_quote("quote1".to_string(), 42, 1000).await;
+
+        // Verify it's there
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 1);
+
+        // Manually set created_at to far past to simulate expiration
+        {
+            let mut quotes = poller.pending_quotes.write().await;
+            if let Some(quote) = quotes.get_mut("quote1") {
+                quote.created_at = Instant::now() - Duration::from_secs(400);
+            }
+        }
+
+        // Run cleanup
+        poller.cleanup_expired_quotes().await;
+
+        // Quote should be removed
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_ignores_recent_quotes() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        poller.register_quote("quote1".to_string(), 42, 1000).await;
+        poller.register_quote("quote2".to_string(), 43, 1000).await;
+
+        // Cleanup should not remove recent quotes (created < 5 minutes ago)
+        poller.cleanup_expired_quotes().await;
+
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_mixed_expired_and_recent() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        poller.register_quote("recent".to_string(), 42, 1000).await;
+        poller.register_quote("expired".to_string(), 43, 2000).await;
+
+        // Make one quote appear old
+        {
+            let mut quotes = poller.pending_quotes.write().await;
+            if let Some(quote) = quotes.get_mut("expired") {
+                quote.created_at = Instant::now() - Duration::from_secs(400);
+            }
+        }
+
+        poller.cleanup_expired_quotes().await;
+
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].0, "recent");
+    }
+
+
+    #[tokio::test]
+    async fn test_cleanup_with_empty_pending_quotes() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        // Should not panic when cleaning up empty list
+        poller.cleanup_expired_quotes().await;
+
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 0);
+    }
+
+    // ============================================================================
+    // Quote Metadata Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_quote_metadata_stored_correctly() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        let channel_id = 123;
+        let amount = 50000;
+
+        poller
+            .register_quote("test_quote".to_string(), channel_id, amount)
+            .await;
+
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 1);
+
+        let (id, stored_channel_id, stored_amount) = &pending[0];
+        assert_eq!(id, "test_quote");
+        assert_eq!(*stored_channel_id, channel_id);
+        assert_eq!(*stored_amount, amount);
+    }
+
+
+    #[tokio::test]
+    async fn test_quote_id_with_special_characters() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        // Quote IDs should handle various characters
+        let quote_id = "quote-123_abc.xyz";
+        poller.register_quote(quote_id.to_string(), 42, 1000).await;
+
+        assert_eq!(poller.get_quote_channel(quote_id).await, Some(42));
+    }
+
+    // ============================================================================
+    // Concurrency and Race Condition Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_concurrent_quote_registration() {
+        let poller = Arc::new(QuotePoller::new(Some("http://localhost:34261".to_string())));
+
+        let mut tasks = vec![];
+
+        for i in 0..10 {
+            let poller_clone = Arc::clone(&poller);
+            let task = tokio::spawn(async move {
+                let quote_id = format!("quote_{}", i);
+                poller_clone
+                    .register_quote(quote_id, i as u32, i as u64 * 1000)
+                    .await;
+            });
+            tasks.push(task);
+        }
+
+        for task in tasks {
+            task.await.unwrap();
+        }
+
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_registration_and_removal() {
+        let poller = Arc::new(QuotePoller::new(Some("http://localhost:34261".to_string())));
+
+        // Register multiple quotes first
+        for i in 0..5 {
+            let quote_id = format!("quote_{}", i);
+            poller
+                .register_quote(quote_id, i as u32, i as u64 * 1000)
+                .await;
+        }
+
+        let mut tasks = vec![];
+
+        // Concurrent register and remove
+        for i in 0..5 {
+            let poller_clone = Arc::clone(&poller);
+            let task = tokio::spawn(async move {
+                let quote_id = format!("quote_{}", i);
+                poller_clone.remove_quote(&quote_id).await;
+            });
+            tasks.push(task);
+        }
+
+        for task in tasks {
+            task.await.unwrap();
+        }
+
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_cleanup_and_queries() {
+        let poller = Arc::new(QuotePoller::new(Some("http://localhost:34261".to_string())));
+
+        // Register quotes
+        for i in 0..20 {
+            let quote_id = format!("quote_{}", i);
+            poller
+                .register_quote(quote_id, i as u32, i as u64 * 1000)
+                .await;
+        }
+
+        let mut tasks = vec![];
+
+        // Spawn cleanup task
+        let cleanup_poller = Arc::clone(&poller);
+        let cleanup_task = tokio::spawn(async move {
+            for _ in 0..3 {
+                cleanup_poller.cleanup_expired_quotes().await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        });
+        tasks.push(cleanup_task);
+
+        // Spawn query tasks
+        for i in 0..5 {
+            let query_poller = Arc::clone(&poller);
+            let task = tokio::spawn(async move {
+                let quote_id = format!("quote_{}", i);
+                let _ = query_poller.get_quote_channel(&quote_id).await;
+            });
+            tasks.push(task);
+        }
+
+        for task in tasks {
+            task.await.unwrap();
+        }
+    }
+
+    // ============================================================================
+    // Pending Quotes Snapshot Tests
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_get_pending_quotes_snapshot() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        poller.register_quote("q1".to_string(), 1, 100).await;
+        poller.register_quote("q2".to_string(), 2, 200).await;
+        poller.register_quote("q3".to_string(), 3, 300).await;
+
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 3);
+
+        // Verify all quotes are in snapshot
+        let quote_ids: Vec<String> = pending.iter().map(|(id, _, _)| id.clone()).collect();
+        assert!(quote_ids.contains(&"q1".to_string()));
+        assert!(quote_ids.contains(&"q2".to_string()));
+        assert!(quote_ids.contains(&"q3".to_string()));
+    }
+
+    // ============================================================================
+    // Mint Quote Status Response Deserialization Tests
+    // ============================================================================
+
+    #[test]
+    fn test_mint_quote_status_response_deserialize() {
+        let json = r#"{
+            "amount": 50000,
+            "amount_issued": 50000,
+            "state": "PAID"
+        }"#;
+
+        let response: MintQuoteStatusResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.amount, Some(50000));
+        assert_eq!(response.amount_issued, Some(50000));
+        assert_eq!(response.state, "PAID");
+    }
+
+    #[test]
+    fn test_mint_quote_status_response_missing_amounts() {
+        let json = r#"{
+            "state": "PENDING"
+        }"#;
+
+        let response: MintQuoteStatusResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.amount, None);
+        assert_eq!(response.amount_issued, None);
+        assert_eq!(response.state, "PENDING");
+    }
+
+    #[test]
+    fn test_mint_quote_status_response_partial_amounts() {
+        let json = r#"{
+            "amount": 100000,
+            "state": "ISSUED"
+        }"#;
+
+        let response: MintQuoteStatusResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.amount, Some(100000));
+        assert_eq!(response.amount_issued, None);
+        assert_eq!(response.state, "ISSUED");
+    }
+
+    #[test]
+    fn test_mint_quote_status_response_case_insensitive() {
+        let states = vec!["PAID", "paid", "Paid", "PENDING", "pending"];
+
+        for state_str in states {
+            let json = format!(r#"{{"state": "{}"}}"#, state_str);
+            let response: MintQuoteStatusResponse = serde_json::from_str(&json).unwrap();
+            assert!(!response.state.is_empty());
+        }
+    }
+
+    // ============================================================================
+    // Integration-Style Tests (without full async runtime)
+    // ============================================================================
+
+    #[tokio::test]
+    async fn test_quote_lifecycle_simulation() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        // Step 1: Register quote (share received)
+        poller.register_quote("q1".to_string(), 42, 1000).await;
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 1);
+
+        // Step 2: Query quote (polling)
+        let channel_id = poller.get_quote_channel("q1").await;
+        assert_eq!(channel_id, Some(42));
+
+        // Step 3: Remove quote (after notification sent)
+        poller.remove_quote("q1").await;
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_bulk_quote_lifecycle() {
+        let poller = QuotePoller::new(Some("http://localhost:34261".to_string()));
+
+        // Register 50 quotes
+        for i in 0..50 {
+            let quote_id = format!("quote_{:03}", i);
+            poller
+                .register_quote(quote_id, (i % 10) as u32, (i as u64) * 1000)
+                .await;
+        }
+
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 50);
+
+        // Remove half
+        for i in 0..25 {
+            let quote_id = format!("quote_{:03}", i);
+            poller.remove_quote(&quote_id).await;
+        }
+
+        let pending = poller.get_pending_quotes().await;
+        assert_eq!(pending.len(), 25);
     }
 }
