@@ -474,7 +474,7 @@ impl TranslatorSv2 {
         wallet: &Arc<Wallet>,
         locking_privkey: Option<&str>,
     ) -> Result<u64> {
-        let pending_quotes = match wallet.get_pending_mint_quotes().await {
+        let pending_quotes = match wallet.get_unpaid_mint_quotes().await {
             Ok(quotes) => quotes,
             Err(e) => {
                 error!("Failed to fetch pending quotes from wallet: {}", e);
