@@ -326,6 +326,7 @@ impl QuotePoller {
     ) -> Result<(), String> {
         // Create MintQuoteNotification extension message
         let notification = MintQuoteNotification {
+            channel_id,
             quote_id: Str0255::try_from(quote_id.to_string())
                 .map_err(|e| format!("Failed to create Str0255 from quote_id: {:?}", e))?,
             amount: amount.into(),

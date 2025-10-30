@@ -5,6 +5,8 @@ use binary_sv2::{binary_codec_sv2, Deserialize, Serialize, Str0255};
 /// Extension message (0xC0) for the Mining protocol
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MintQuoteNotification<'decoder> {
+    /// Channel identifier - required as first field per SV2 spec section 3.2.1
+    pub channel_id: u32,
     pub quote_id: Str0255<'decoder>,
     pub amount: u64,
 }
@@ -24,6 +26,8 @@ impl fmt::Display for MintQuoteNotification<'_> {
 /// Extension message (0xC1) for the Mining protocol
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct MintQuoteFailure<'decoder> {
+    /// Channel identifier - required as first field per SV2 spec section 3.2.1
+    pub channel_id: u32,
     pub quote_id: Str0255<'decoder>,
     pub error_code: u32,
     pub error_message: Str0255<'decoder>,
