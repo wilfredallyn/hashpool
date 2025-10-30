@@ -200,6 +200,33 @@ fn send_extended_share_quote_request(
     }
 }
 
+/// Helper function to spawn a channel registration task with proper logging.
+///
+/// Spawns an async task to register a channel with the mint manager. The task:
+/// 1. Registers the channel with the mint manager
+/// 2. Logs success at INFO level with downstream and channel IDs
+/// 3. Does NOT fail channel creation if registration takes time (non-fatal)
+///
+/// This ensures that channel registration happens asynchronously and doesn't block
+/// channel creation while still providing visibility into registration via logging.
+fn spawn_channel_registration(
+    mint_manager: Arc<super::mint_integration::MintIntegrationManager>,
+    downstream_id: u32,
+    channel_id: u32,
+    locking_key: Vec<u8>,
+    channel_type: &'static str,
+) {
+    tokio::spawn(async move {
+        mint_manager
+            .register_channel(channel_id, Some(locking_key), downstream_id)
+            .await;
+        info!(
+            "Registered {} channel {} with mint manager (downstream={})",
+            channel_type, channel_id, downstream_id
+        );
+    });
+}
+
 impl ParseMiningMessagesFromDownstream<()> for Downstream {
     // Specifies the types of mining channels supported by this pool implementation.
     //
@@ -388,15 +415,7 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
         if let Some(locking_key) = self.locking_key_bytes.clone() {
             let mint_manager = self.mint_manager.clone();
             let downstream_id = self.id;
-            tokio::spawn(async move {
-                mint_manager
-                    .register_channel(channel_id, Some(locking_key), downstream_id)
-                    .await;
-                info!(
-                    "Registered standard channel {} with mint manager (downstream={})",
-                    channel_id, downstream_id
-                );
-            });
+            spawn_channel_registration(mint_manager, downstream_id, channel_id, locking_key, "standard");
         } else {
             debug!(
                 "Skipping mint registration for standard channel {} (missing locking key)",
@@ -603,15 +622,7 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
         if let Some(locking_key) = self.locking_key_bytes.clone() {
             let mint_manager = self.mint_manager.clone();
             let downstream_id = self.id;
-            tokio::spawn(async move {
-                mint_manager
-                    .register_channel(channel_id, Some(locking_key), downstream_id)
-                    .await;
-                info!(
-                    "Registered extended channel {} with mint manager (downstream={})",
-                    channel_id, downstream_id
-                );
-            });
+            spawn_channel_registration(mint_manager, downstream_id, channel_id, locking_key, "extended");
         } else {
             debug!(
                 "Skipping mint registration for extended channel {} (missing locking key)",
