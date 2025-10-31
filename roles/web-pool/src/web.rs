@@ -1,17 +1,17 @@
-use bytes::Bytes;
-use http_body_util::Full;
-use hyper::{
-    body::Incoming, server::conn::http1, service::service_fn, Method, Request, Response, StatusCode,
+use axum::{
+    extract::State,
+    http::StatusCode,
+    response::{Html, IntoResponse},
+    routing::get,
+    Json, Router,
 };
-use hyper_util::rt::TokioIo;
 use serde_json::json;
-use std::{convert::Infallible, sync::OnceLock};
-use tokio::net::TcpListener;
-use tracing::{error, info};
+use std::sync::{Arc, OnceLock};
+use tracing::info;
 
 use crate::SnapshotStorage;
-use std::sync::Arc;
 use web_assets::icons::{nav_icon_css, pickaxe_favicon_inline_svg};
+use web_utils::format_elapsed_time;
 
 static DASHBOARD_PAGE_HTML: OnceLock<String> = OnceLock::new();
 static CLIENT_POLL_INTERVAL_SECS: OnceLock<u64> = OnceLock::new();
@@ -23,111 +23,79 @@ pub async fn run_http_server(
     storage: Arc<SnapshotStorage>,
     client_poll_interval_secs: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let listener = TcpListener::bind(&address).await?;
+    // Store the polling interval for use in dashboard_page
+    let _ = CLIENT_POLL_INTERVAL_SECS.set(client_poll_interval_secs);
+
+    let app = Router::new()
+        .route("/favicon.ico", get(serve_favicon))
+        .route("/favicon.svg", get(serve_favicon))
+        .route("/", get(dashboard_page_handler))
+        .route("/api/stats", get(api_stats_handler))
+        .route("/api/services", get(api_services_handler))
+        .route("/api/connections", get(api_connections_handler))
+        .route("/health", get(health_handler))
+        .with_state(storage);
+
+    let listener = tokio::net::TcpListener::bind(&address).await?;
     info!("🌐 Web pool listening on http://{}", address);
     info!(
         "Client polling interval: {} seconds",
         client_poll_interval_secs
     );
 
-    // Store the polling interval for use in dashboard_page
-    let _ = CLIENT_POLL_INTERVAL_SECS.set(client_poll_interval_secs);
+    axum::serve(listener, app).await?;
 
-    loop {
-        let (stream, _) = listener.accept().await?;
-        let io = TokioIo::new(stream);
-        let storage = storage.clone();
-
-        tokio::task::spawn(async move {
-            let service = service_fn(move |req| {
-                let storage = storage.clone();
-                async move { handle_request(req, storage).await }
-            });
-
-            if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
-                error!("Error serving connection: {:?}", err);
-            }
-        });
-    }
+    Ok(())
 }
 
-async fn handle_request(
-    req: Request<Incoming>,
-    storage: Arc<SnapshotStorage>,
-) -> Result<Response<Full<Bytes>>, Infallible> {
-    let response = match (req.method(), req.uri().path()) {
-        (&Method::GET, "/favicon.ico") | (&Method::GET, "/favicon.svg") => Ok(serve_favicon()),
-        (&Method::GET, "/") => Response::builder()
-            .header("content-type", "text/html; charset=utf-8")
-            .body(Full::new(dashboard_page())),
-        (&Method::GET, "/api/stats") => {
-            let stats = get_pool_stats(storage).await;
-            Response::builder()
-                .header("content-type", "application/json")
-                .body(Full::new(Bytes::from(stats.to_string())))
-        }
-        (&Method::GET, "/api/services") => {
-            let services = get_services(storage).await;
-            Response::builder()
-                .header("content-type", "application/json")
-                .body(Full::new(Bytes::from(services.to_string())))
-        }
-        (&Method::GET, "/api/connections") => {
-            let connections = get_connections(storage).await;
-            Response::builder()
-                .header("content-type", "application/json")
-                .body(Full::new(Bytes::from(connections.to_string())))
-        }
-        (&Method::GET, "/health") => {
-            let stale = storage.is_stale(15);
-            let status_code = if stale {
-                StatusCode::SERVICE_UNAVAILABLE
-            } else {
-                StatusCode::OK
-            };
-            let json_response = json!({
-                "healthy": !stale,
-                "stale": stale
-            });
-            Response::builder()
-                .status(status_code)
-                .header("content-type", "application/json")
-                .body(Full::new(Bytes::from(json_response.to_string())))
-        }
-        _ => Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Full::new(Bytes::from("Not Found"))),
-    };
-
-    Ok(response.unwrap_or_else(|_| {
-        Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Full::new(Bytes::from("Internal Server Error")))
-            .unwrap()
-    }))
+async fn serve_favicon() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        [("content-type", "image/svg+xml")],
+        pickaxe_favicon_inline_svg(),
+    )
 }
 
-fn serve_favicon() -> Response<Full<Bytes>> {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header("content-type", "image/svg+xml")
-        .body(Full::new(Bytes::from_static(
-            pickaxe_favicon_inline_svg().as_bytes(),
-        )))
-        .unwrap()
-}
-
-fn dashboard_page() -> Bytes {
+async fn dashboard_page_handler() -> impl IntoResponse {
     let interval_ms = CLIENT_POLL_INTERVAL_SECS.get().copied().unwrap_or(3) * 1000;
     let html = DASHBOARD_PAGE_HTML.get_or_init(|| {
         DASHBOARD_PAGE_TEMPLATE
             .replace("/* {{NAV_ICON_CSS}} */", nav_icon_css())
             .replace("{client_poll_interval_ms}", &interval_ms.to_string())
     });
-    Bytes::from(html.clone())
+    Html(html.clone())
 }
 
-async fn get_pool_stats(storage: Arc<SnapshotStorage>) -> serde_json::Value {
+async fn api_stats_handler(State(storage): State<Arc<SnapshotStorage>>) -> impl IntoResponse {
+    let stats = get_pool_stats(storage);
+    Json(stats)
+}
+
+async fn api_services_handler(State(storage): State<Arc<SnapshotStorage>>) -> impl IntoResponse {
+    let services = get_services(storage);
+    Json(services)
+}
+
+async fn api_connections_handler(State(storage): State<Arc<SnapshotStorage>>) -> impl IntoResponse {
+    let connections = get_connections(storage);
+    Json(connections)
+}
+
+async fn health_handler(State(storage): State<Arc<SnapshotStorage>>) -> impl IntoResponse {
+    let stale = storage.is_stale(15);
+    let status_code = if stale {
+        StatusCode::SERVICE_UNAVAILABLE
+    } else {
+        StatusCode::OK
+    };
+    let json_response = json!({
+        "healthy": !stale,
+        "stale": stale
+    });
+    (status_code, Json(json_response))
+}
+
+fn get_pool_stats(storage: Arc<SnapshotStorage>) -> serde_json::Value {
     match storage.get() {
         Some(snapshot) => {
             json!({
@@ -148,7 +116,7 @@ async fn get_pool_stats(storage: Arc<SnapshotStorage>) -> serde_json::Value {
     }
 }
 
-async fn get_services(storage: Arc<SnapshotStorage>) -> serde_json::Value {
+fn get_services(storage: Arc<SnapshotStorage>) -> serde_json::Value {
     match storage.get() {
         Some(snapshot) => {
             let services: Vec<serde_json::Value> = snapshot
@@ -167,29 +135,19 @@ async fn get_services(storage: Arc<SnapshotStorage>) -> serde_json::Value {
     }
 }
 
-async fn get_connections(storage: Arc<SnapshotStorage>) -> serde_json::Value {
+fn get_connections(storage: Arc<SnapshotStorage>) -> serde_json::Value {
     match storage.get() {
         Some(snapshot) => {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+
             let proxies: Vec<serde_json::Value> = snapshot
                 .downstream_proxies
                 .iter()
                 .map(|p| {
-                    let last_share = p.last_share_at.map(|ts| {
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_secs();
-                        let elapsed = now.saturating_sub(ts);
-                        if elapsed < 60 {
-                            format!("{}s ago", elapsed)
-                        } else if elapsed < 3600 {
-                            format!("{}m ago", elapsed / 60)
-                        } else if elapsed < 86400 {
-                            format!("{}h ago", elapsed / 3600)
-                        } else {
-                            format!("{}d ago", elapsed / 86400)
-                        }
-                    });
+                    let last_share = p.last_share_at.map(|ts| format_elapsed_time(now, ts));
 
                     json!({
                         "id": p.id,

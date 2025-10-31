@@ -18,14 +18,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
-hyper = { version = "1.0", features = ["full"] }
-hyper-util = { version = "0.1", features = ["full"] }
-http-body-util = "0.1"
-bytes = "1"
+axum = "0.8"
+tokio-util = { version = "0.7", features = ["io-util"] }
 reqwest = { version = "0.12", features = ["json"] }
 
 # Web assets
 web_assets = { path = "../roles-utils/web-assets" }
+web_utils = { path = "../roles-utils/web-utils" }
 
 # Stats adapter (for ProxySnapshot type)
 stats = { path = "../roles-utils/stats" }

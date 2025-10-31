@@ -69,6 +69,7 @@ async fn poll_stats_pool(
     pool_idle_timeout_secs: u64,
 ) {
     let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(request_timeout_secs))
         .pool_idle_timeout(Duration::from_secs(pool_idle_timeout_secs))
         .pool_max_idle_per_host(1)
         .build()
