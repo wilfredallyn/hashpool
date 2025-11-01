@@ -222,25 +222,20 @@ impl TranslatorSv2 {
             use stats::stats_adapter::StatsSnapshotProvider;
             use stats::stats_client::StatsClient;
 
-            let stats_client = StatsClient::new(stats_addr.clone());
-            let translator_for_stats = translator_clone.clone();
-
             info!("Starting stats polling loop, sending to {} every {} seconds",
                   stats_addr, stats_poll_interval);
 
+            let translator_for_stats = translator_clone.clone();
+            let stats_addr_clone = stats_addr.clone();
             task_manager.spawn(async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_secs(stats_poll_interval));
+                let status_client = StatsClient::new(stats_addr.clone());
+                let metrics_client = StatsClient::new(stats_addr_clone);
 
                 loop {
                     interval.tick().await;
-
-                    // Get snapshot via trait
-                    let snapshot = translator_for_stats.get_snapshot();
-
-                    // Send to stats service
-                    if let Err(e) = stats_client.send_snapshot(snapshot).await {
-                        error!("Failed to send stats snapshot: {}", e);
-                    }
+                    let _ = status_client.send_snapshot(translator_for_stats.get_snapshot()).await;
+                    let _ = metrics_client.send_snapshot(translator_for_stats.get_metrics_snapshot()).await;
                 }
             });
         }

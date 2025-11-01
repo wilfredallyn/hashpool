@@ -29,3 +29,4 @@ web_assets = { path = "../roles-utils/web-assets" }
 
 # Stats adapter
 stats = { path = "../roles-utils/stats" }
+stats-sv2 = { path = "../roles-utils/stats-sv2" }

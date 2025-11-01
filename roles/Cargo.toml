@@ -17,6 +17,7 @@ members = [
     # "roles-utils/pool-messages",  # TODO: Phase 2 - will be activated when mint role is enabled
     "roles-utils/web-assets",
     "roles-utils/stats",
+    "roles-utils/stats-sv2",
     "roles-utils/network-helpers",
     "roles-utils/stratum-translation",
     "roles-utils/config",

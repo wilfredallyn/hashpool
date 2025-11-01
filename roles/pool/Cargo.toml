@@ -38,6 +38,7 @@ share-hooks = { path = "../roles-utils/share-hooks" }
 quote-dispatcher = { path = "../roles-utils/quote-dispatcher" }
 pool-stats = { path = "../roles-utils/pool-stats" }
 stats = { path = "../roles-utils/stats" }
+stats-sv2 = { path = "../roles-utils/stats-sv2" }
 reqwest = { version = "0.11", features = ["json"] }
 sha2 = "0.10"
 binary_sv2 = { path = "../../protocols/v2/binary-sv2" }

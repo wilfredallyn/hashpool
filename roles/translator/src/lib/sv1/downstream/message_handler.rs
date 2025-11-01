@@ -4,6 +4,7 @@ use v1::{
     utils::{Extranonce, HexU32Be},
     IsServer,
 };
+use stratum_common::roles_logic_sv2::utils::target_to_difficulty;
 
 use crate::{
     sv1::downstream::{data::DownstreamData, SubmitShareWithChannelId},
@@ -99,11 +100,11 @@ impl IsServer<'static> for DownstreamData {
             // Store the share to be sent to the Sv1Server
             self.pending_share.replace(Some(to_send));
 
-            // Track share submission for this miner with current hashrate from difficulty management
+            // Track share submission for this miner with difficulty for time-series metrics
             if let (Some(miner_id), Some(miner_tracker)) = (self.miner_id, self.miner_tracker.clone()) {
-                let current_hashrate = self.hashrate.unwrap_or(0.0) as f32;
+                let difficulty = target_to_difficulty(self.target.clone());
                 tokio::spawn(async move {
-                    miner_tracker.increment_shares(miner_id, current_hashrate).await;
+                    miner_tracker.record_share(miner_id, difficulty).await;
                 });
             }
 

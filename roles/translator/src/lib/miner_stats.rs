@@ -14,6 +14,11 @@ pub struct MinerInfo {
     pub shares_submitted: u64,
     pub last_share_time: Option<Instant>,
     pub estimated_hashrate: f64, // H/s
+
+    // Window metrics for time-series collection
+    pub shares_in_window: u64,
+    pub sum_difficulty_in_window: f64,
+    pub window_start: Instant,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +67,9 @@ impl MinerTracker {
             shares_submitted: 0,
             last_share_time: None,
             estimated_hashrate: 0.0,
+            shares_in_window: 0,
+            sum_difficulty_in_window: 0.0,
+            window_start: Instant::now(),
         };
 
         self.miners.write().await.insert(id, miner);
@@ -80,6 +88,17 @@ impl MinerTracker {
             // Update with current hashrate from difficulty management
             // This gets adjusted by the difficulty system over time
             miner.estimated_hashrate = current_hashrate as f64;
+        }
+    }
+
+    /// Record a share with its difficulty for time-series metrics.
+    pub async fn record_share(&self, id: u32, difficulty: f64) {
+        let mut miners = self.miners.write().await;
+        if let Some(miner) = miners.get_mut(&id) {
+            miner.shares_submitted += 1;
+            miner.last_share_time = Some(Instant::now());
+            miner.shares_in_window += 1;
+            miner.sum_difficulty_in_window += difficulty;
         }
     }
 

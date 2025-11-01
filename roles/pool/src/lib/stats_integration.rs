@@ -5,11 +5,13 @@
 
 use super::mining_pool::Pool;
 use stats::stats_adapter::{
-    PoolSnapshot, ProxyConnection, ServiceConnection, ServiceType, StatsSnapshotProvider,
+    PoolStatus, ProxyConnection, ServiceConnection, ServiceType, StatsSnapshotProvider,
 };
+use stats_sv2::types::{DownstreamSnapshot, ServiceSnapshot, ServiceType as MetricsServiceType, unix_timestamp};
 use std::time::SystemTime;
 
-fn unix_timestamp() -> u64 {
+// Unix timestamp helper (kept for potential future use)
+fn _unix_timestamp_helper() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -17,9 +19,9 @@ fn unix_timestamp() -> u64 {
 }
 
 impl StatsSnapshotProvider for Pool {
-    type Snapshot = PoolSnapshot;
+    type Snapshot = PoolStatus;
 
-    fn get_snapshot(&self) -> PoolSnapshot {
+    fn get_snapshot(&self) -> PoolStatus {
         // Get service connections (pool, mint, jd-server if connected)
         let mut services = Vec::new();
 
@@ -78,10 +80,41 @@ impl StatsSnapshotProvider for Pool {
             }
         }
 
-        PoolSnapshot {
+        PoolStatus {
             services,
             downstream_proxies,
             listen_address: "0.0.0.0:34254".to_string(),
+            timestamp: unix_timestamp(),
+        }
+    }
+}
+
+impl Pool {
+    /// Get a ServiceSnapshot for time-series metrics collection.
+    pub fn get_metrics_snapshot(&self) -> ServiceSnapshot {
+        let mut downstreams = Vec::new();
+
+        for (id, downstream) in &self.downstreams {
+            if let Ok((address, _requires_custom_work)) = downstream.safe_lock(|d| {
+                (d.address.to_string(), d.requires_custom_work)
+            }) {
+                if let Some(stats) = self.stats_registry.get_stats(*id) {
+                    downstreams.push(DownstreamSnapshot {
+                        downstream_id: *id,
+                        name: format!("translator_{}", id),
+                        address,
+                        shares_lifetime: stats.shares_submitted.load(std::sync::atomic::Ordering::Relaxed),
+                        shares_in_window: stats.shares_in_current_window(),
+                        sum_difficulty_in_window: stats.get_sum_difficulty(),
+                        timestamp: unix_timestamp(),
+                    });
+                }
+            }
+        }
+
+        ServiceSnapshot {
+            service_type: MetricsServiceType::Pool,
+            downstreams,
             timestamp: unix_timestamp(),
         }
     }

@@ -23,6 +23,7 @@ hyper-util = { version = "0.1", features = ["full"] }
 http-body-util = "0.1"
 bytes = "1"
 stats = { path = "../roles-utils/stats" }
+stats-sv2 = { path = "../roles-utils/stats-sv2" }
 
 # Web assets
 web_assets = { path = "../roles-utils/web-assets" }

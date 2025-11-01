@@ -4,10 +4,12 @@
 //! to the stats service for web dashboard consumption.
 
 use super::TranslatorSv2;
-use stats::stats_adapter::{MinerInfo, PoolConnection, ProxySnapshot, StatsSnapshotProvider};
+use stats::stats_adapter::{MinerInfo, PoolConnection, TranslatorStatus, StatsSnapshotProvider};
+use stats_sv2::types::{DownstreamSnapshot, ServiceSnapshot, ServiceType, unix_timestamp};
 use std::time::SystemTime;
 
-fn unix_timestamp() -> u64 {
+// Unix timestamp helper (kept for potential future use)
+fn _unix_timestamp_helper() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -15,9 +17,9 @@ fn unix_timestamp() -> u64 {
 }
 
 impl StatsSnapshotProvider for TranslatorSv2 {
-    type Snapshot = ProxySnapshot;
+    type Snapshot = TranslatorStatus;
 
-    fn get_snapshot(&self) -> ProxySnapshot {
+    fn get_snapshot(&self) -> TranslatorStatus {
         // Get wallet balance if wallet is available
         let ehash_balance = if let Some(ref wallet) = self.wallet {
             // Try to get balance synchronously without blocking
@@ -72,11 +74,43 @@ impl StatsSnapshotProvider for TranslatorSv2 {
             .unwrap_or_else(|_| "unknown".to_string())
             .to_lowercase();
 
-        ProxySnapshot {
+        TranslatorStatus {
             ehash_balance,
             upstream_pool,
             downstream_miners,
             blockchain_network,
+            timestamp: unix_timestamp(),
+        }
+    }
+}
+
+impl TranslatorSv2 {
+    /// Get a ServiceSnapshot for time-series metrics collection.
+    pub fn get_metrics_snapshot(&self) -> ServiceSnapshot {
+        let downstreams = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                self.miner_tracker.get_all_miners().await
+                    .into_iter()
+                    .map(|miner| DownstreamSnapshot {
+                        downstream_id: miner.id,
+                        name: miner.name,
+                        address: if self.config.redact_ip {
+                            "REDACTED".to_string()
+                        } else {
+                            miner.address.to_string()
+                        },
+                        shares_lifetime: miner.shares_submitted,
+                        shares_in_window: miner.shares_in_window,
+                        sum_difficulty_in_window: miner.sum_difficulty_in_window,
+                        timestamp: unix_timestamp(),
+                    })
+                    .collect()
+            })
+        });
+
+        ServiceSnapshot {
+            service_type: ServiceType::Translator,
+            downstreams,
             timestamp: unix_timestamp(),
         }
     }

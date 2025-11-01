@@ -1,6 +1,7 @@
 use stats::stats_adapter::ProxySnapshot;
+use stats_sv2::types::ServiceSnapshot;
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::db::StatsData;
 
@@ -14,20 +15,37 @@ impl StatsHandler {
     }
 
     pub async fn handle_message(&self, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-        // Parse JSON message as ProxySnapshot
-        let snapshot: ProxySnapshot = serde_json::from_slice(data)?;
+        // First try to parse as ServiceSnapshot (metrics data)
+        if let Ok(snapshot) = serde_json::from_slice::<ServiceSnapshot>(data) {
+            debug!(
+                "Received metrics snapshot: service_type={:?}, downstreams={}, timestamp={}",
+                snapshot.service_type,
+                snapshot.downstreams.len(),
+                snapshot.timestamp
+            );
 
-        debug!(
-            "Received snapshot: balance={}, miners={}, timestamp={}",
-            snapshot.ehash_balance,
-            snapshot.downstream_miners.len(),
-            snapshot.timestamp
-        );
+            // Store metrics in database
+            self.db.store_metrics_snapshot(snapshot).await?;
+            return Ok(());
+        }
 
-        // Store the snapshot in memory
-        self.db.store_snapshot(snapshot);
+        // Fall back to ProxySnapshot (legacy stats data)
+        if let Ok(snapshot) = serde_json::from_slice::<ProxySnapshot>(data) {
+            debug!(
+                "Received proxy snapshot: balance={}, miners={}, timestamp={}",
+                snapshot.ehash_balance,
+                snapshot.downstream_miners.len(),
+                snapshot.timestamp
+            );
 
-        Ok(())
+            // Store the snapshot in memory
+            self.db.store_snapshot(snapshot);
+            return Ok(());
+        }
+
+        // If neither worked, log warning and return error
+        warn!("Failed to parse snapshot message as either ServiceSnapshot or ProxySnapshot");
+        Err("Invalid snapshot format".into())
     }
 }
 

@@ -8,15 +8,18 @@ pub trait StatsSnapshotProvider {
     fn get_snapshot(&self) -> Self::Snapshot;
 }
 
-// Proxy-specific snapshot types
+// Translator status snapshot - operational state of translator
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProxySnapshot {
+pub struct TranslatorStatus {
     pub ehash_balance: u64,
     pub upstream_pool: Option<PoolConnection>,
     pub downstream_miners: Vec<MinerInfo>,
     pub blockchain_network: String,
     pub timestamp: u64,
 }
+
+// Legacy alias for backward compatibility
+pub type ProxySnapshot = TranslatorStatus;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PoolConnection {
@@ -33,14 +36,17 @@ pub struct MinerInfo {
     pub connected_at: u64,
 }
 
-// Pool-specific snapshot types
+// Pool status snapshot - operational state of pool
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PoolSnapshot {
+pub struct PoolStatus {
     pub services: Vec<ServiceConnection>,
     pub downstream_proxies: Vec<ProxyConnection>,
     pub listen_address: String,
     pub timestamp: u64,
 }
+
+// Legacy alias for backward compatibility
+pub type PoolSnapshot = PoolStatus;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceConnection {

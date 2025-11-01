@@ -1,18 +1,72 @@
 use stats::stats_adapter::ProxySnapshot;
+use stats_sv2::types::ServiceSnapshot;
+use stats_sv2::StatsStorage;
 use std::{
+    sync::Arc,
     sync::RwLock,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 pub struct StatsData {
     snapshot: RwLock<Option<ProxySnapshot>>,
-    // TODO: Add time series storage for hashrate, shares, and ecash history
+    // Time-series metrics storage
+    metrics_storage: Arc<tokio::sync::RwLock<Option<stats_sv2::storage::SqliteStorage>>>,
 }
 
 impl StatsData {
     pub fn new() -> Self {
         StatsData {
             snapshot: RwLock::new(None),
+            metrics_storage: Arc::new(tokio::sync::RwLock::new(None)),
+        }
+    }
+
+    /// Initialize metrics storage with optional database path
+    pub async fn init_metrics_storage(&self, db_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+        let path = db_path.unwrap_or(".devenv/state/stats-proxy/metrics.db");
+        let storage = stats_sv2::storage::SqliteStorage::new(path).await?;
+        let mut guard = self.metrics_storage.write().await;
+        *guard = Some(storage);
+        Ok(())
+    }
+
+    /// Store a service snapshot in metrics database
+    pub async fn store_metrics_snapshot(&self, snapshot: ServiceSnapshot) -> Result<(), Box<dyn std::error::Error>> {
+        let guard = self.metrics_storage.read().await;
+        if let Some(storage) = guard.as_ref() {
+            for downstream in snapshot.downstreams {
+                storage.store_downstream(&downstream).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Query hashrate for a specific downstream
+    pub async fn query_hashrate(
+        &self,
+        downstream_id: u32,
+        from_timestamp: u64,
+        to_timestamp: u64,
+    ) -> Result<Vec<stats_sv2::types::HashratePoint>, Box<dyn std::error::Error>> {
+        let guard = self.metrics_storage.read().await;
+        if let Some(storage) = guard.as_ref() {
+            Ok(storage.query_hashrate(downstream_id, from_timestamp, to_timestamp).await?)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
+    /// Query aggregate hashrate across all downstreams
+    pub async fn query_aggregate_hashrate(
+        &self,
+        from_timestamp: u64,
+        to_timestamp: u64,
+    ) -> Result<Vec<stats_sv2::types::HashratePoint>, Box<dyn std::error::Error>> {
+        let guard = self.metrics_storage.read().await;
+        if let Some(storage) = guard.as_ref() {
+            Ok(storage.query_aggregate_hashrate(from_timestamp, to_timestamp).await?)
+        } else {
+            Ok(Vec::new())
         }
     }
 

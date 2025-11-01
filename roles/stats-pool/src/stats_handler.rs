@@ -1,7 +1,8 @@
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use stats::stats_adapter::{JdsSnapshot, PoolSnapshot};
+use stats_sv2::types::ServiceSnapshot;
 
 use crate::db::StatsData;
 
@@ -15,9 +16,23 @@ impl StatsHandler {
     }
 
     /// Accept a newline-delimited JSON payload, deserialize it into a
-    /// `PoolSnapshot` or `JdsSnapshot`, and store it in the shared in-memory cache.
+    /// `PoolSnapshot`, `JdsSnapshot`, or `ServiceSnapshot`, and store it appropriately.
     pub async fn handle_message(&self, data: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
-        // Try to deserialize as PoolSnapshot first
+        // Try to deserialize as ServiceSnapshot (metrics data) first
+        if let Ok(snapshot) = serde_json::from_slice::<ServiceSnapshot>(data) {
+            debug!(
+                "Received metrics snapshot: service_type={:?}, downstreams={}, timestamp={}",
+                snapshot.service_type,
+                snapshot.downstreams.len(),
+                snapshot.timestamp
+            );
+
+            // Store metrics in database
+            self.db.store_metrics_snapshot(snapshot).await?;
+            return Ok(());
+        }
+
+        // Try to deserialize as PoolSnapshot
         if let Ok(snapshot) = serde_json::from_slice::<PoolSnapshot>(data) {
             debug!(
                 "Received pool snapshot: services={}, proxies={}, listen={}, ts={}",
@@ -42,6 +57,7 @@ impl StatsHandler {
             return Ok(());
         }
 
+        warn!("Failed to parse snapshot message as ServiceSnapshot, PoolSnapshot, or JdsSnapshot");
         Err("Unknown snapshot type".into())
     }
 }

@@ -138,6 +138,8 @@ pub struct Downstream {
     quote_dispatcher: Option<Arc<QuoteDispatcher>>,
     // Reference to the mint integration manager for channel registration/tracking
     mint_manager: Arc<mint_integration::MintIntegrationManager>,
+    // Registry for tracking downstream statistics (shares, quotes, ehash, last_share)
+    stats_registry: Arc<pool_stats::PoolStatsRegistry>,
     // Compressed public key (33 bytes) for quote attribution to this miner
     // Used in share quote requests for eHash attribution
     locking_key_bytes: Option<Vec<u8>>,
@@ -294,6 +296,7 @@ impl Downstream {
 
         let pool_tag = pool.safe_lock(|p| p.pool_tag_string.clone())?;
         let mint_manager = pool.safe_lock(|p| p.mint_manager.clone())?;
+        let stats_registry = pool.safe_lock(|p| p.stats_registry.clone())?;
 
         // Register downstream with stats and create per-downstream quote dispatcher with callback
         let quote_dispatcher = pool.safe_lock(|p| {
@@ -327,6 +330,7 @@ impl Downstream {
             solution_sender,
             quote_dispatcher,
             mint_manager,
+            stats_registry,
             channel_id_factory,
             extended_channels: HashMap::new(),
             standard_channels: HashMap::new(),
@@ -1345,31 +1349,29 @@ impl Pool {
                 stats_client::StatsClient,
             };
 
-            let stats_client = StatsClient::new(stats_addr.clone());
-            let pool_clone = cloned3.clone();
-
             info!("Starting stats polling loop, sending to {} every {} seconds",
                   stats_addr, stats_poll_interval);
 
+            let pool_clone = cloned3.clone();
+            let stats_addr_clone = stats_addr.clone();
             task::spawn(async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_secs(stats_poll_interval));
+                let status_client = StatsClient::new(stats_addr);
+                let metrics_client = StatsClient::new(stats_addr_clone);
 
                 loop {
                     interval.tick().await;
 
-                    // Get snapshot via trait - need to lock pool to call get_snapshot
-                    let snapshot = match pool_clone.safe_lock(|p| p.get_snapshot()) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            error!("Failed to lock pool for stats snapshot: {}", e);
-                            continue;
-                        }
+                    // Get both snapshots while holding lock, then send without lock
+                    let (status, metrics) = match pool_clone.safe_lock(|p| {
+                        (p.get_snapshot(), p.get_metrics_snapshot())
+                    }) {
+                        Ok(pair) => pair,
+                        Err(_) => continue,
                     };
 
-                    // Send to stats service
-                    if let Err(e) = stats_client.send_snapshot(snapshot).await {
-                        error!("Failed to send stats snapshot: {}", e);
-                    }
+                    let _ = status_client.send_snapshot(status).await;
+                    let _ = metrics_client.send_snapshot(metrics).await;
                 }
             });
         }

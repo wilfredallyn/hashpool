@@ -30,7 +30,7 @@ use stratum_common::roles_logic_sv2::{
     mining_sv2::*,
     parsers_sv2::Mining,
     template_distribution_sv2::SubmitSolution,
-    utils::Mutex,
+    utils::{Mutex, target_to_difficulty},
     Vardiff, VardiffState,
 };
 use tracing::{debug, error, info, warn};
@@ -893,6 +893,14 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
 
         let res = standard_channel.validate_share(m.clone());
         vardiff.increment_shares_since_last_update();
+
+        // Record share with difficulty for time-series metrics
+        if let Some(stats) = self.stats_registry.get_stats(self.id) {
+            let target = standard_channel.get_target().clone();
+            let difficulty = target_to_difficulty(target);
+            stats.record_share_with_difficulty(difficulty);
+        }
+
         match res {
             Ok(ShareValidationResult::Valid(accepted_share)) => {
                 info!(
@@ -1060,6 +1068,14 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
 
         let res = extended_channel.validate_share(m.clone());
         vardiff.increment_shares_since_last_update();
+
+        // Record share with difficulty for time-series metrics
+        if let Some(stats) = self.stats_registry.get_stats(self.id) {
+            let target = extended_channel.get_target().clone();
+            let difficulty = target_to_difficulty(target);
+            stats.record_share_with_difficulty(difficulty);
+        }
+
         match res {
             Ok(ShareValidationResult::Valid(accepted_share)) => {
                 info!(
