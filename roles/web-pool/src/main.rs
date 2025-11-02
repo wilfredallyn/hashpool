@@ -55,6 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.web_server_address,
         storage,
         config.client_poll_interval_secs,
+        Some(config.stats_pool_url.clone()),
     )
     .await?;
 
@@ -114,6 +115,7 @@ async fn start_web_server(
     address: String,
     storage: Arc<SnapshotStorage>,
     client_poll_interval_secs: u64,
+    stats_pool_url: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    web_pool::web::run_http_server(address, storage, client_poll_interval_secs).await
+    web_pool::web::run_http_server(address, storage, client_poll_interval_secs, stats_pool_url).await
 }

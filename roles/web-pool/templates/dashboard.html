@@ -2,8 +2,10 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Hashpool Pool Dashboard</title>
     <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
     <style>
         body {
             font-family: 'Courier New', monospace;
@@ -29,6 +31,8 @@
             display: flex;
             justify-content: space-around;
             margin-bottom: 40px;
+            flex-wrap: wrap;
+            gap: 15px;
         }
         .stat-box {
             text-align: center;
@@ -50,6 +54,76 @@
             margin-top: 0;
             text-align: center;
             color: #00ff00;
+        }
+        .chart-section {
+            margin-bottom: 40px;
+            padding: 20px;
+            border: 1px solid #00ff00;
+            background: #222;
+        }
+        .chart-section h3 {
+            margin-top: 0;
+            text-align: center;
+            color: #00ff00;
+        }
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 0 40px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .stats-display {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+            width: 100%;
+            justify-content: space-between;
+        }
+        .stat {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .stat label {
+            color: #00aa00;
+            font-size: 12px;
+        }
+        .stat .value {
+            color: #00ff00;
+            font-weight: bold;
+        }
+        .time-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .time-btn {
+            padding: 8px 15px;
+            border: 1px solid #00ff00;
+            background: #1a1a1a;
+            color: #00ff00;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            transition: all 0.2s;
+        }
+        .time-btn:hover {
+            background: #00ff00;
+            color: #1a1a1a;
+        }
+        .time-btn.active {
+            background: #00ff00;
+            color: #1a1a1a;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 15px;
+        }
+        canvas {
+            max-height: 100%;
         }
         table {
             width: 100%;
@@ -142,6 +216,40 @@
             </table>
         </div>
 
+        <!-- Aggregate Hashrate Chart -->
+        <div class="chart-section">
+            <h3>Aggregate Hashrate</h3>
+            <div class="time-controls">
+                <label>Time Range:</label>
+                <button class="time-btn active" data-hours="1">1h</button>
+                <button class="time-btn" data-hours="24">24h</button>
+                <button class="time-btn" data-hours="168">7d</button>
+            </div>
+            <div class="chart-container">
+                <canvas id="aggregate-chart"></canvas>
+            </div>
+            <div class="chart-header">
+                <div class="stats-display">
+                    <span class="stat">
+                        <label>Current:</label>
+                        <span id="current-hashrate" class="value">—</span>
+                    </span>
+                    <span class="stat">
+                        <label>Average:</label>
+                        <span id="avg-hashrate" class="value">—</span>
+                    </span>
+                    <span class="stat">
+                        <label>Peak:</label>
+                        <span id="peak-hashrate" class="value">—</span>
+                    </span>
+                    <span class="stat">
+                        <label>Low:</label>
+                        <span id="low-hashrate" class="value">—</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+
         <div class="stats">
             <div class="stat-box">
                 <div>Connected Proxies</div>
@@ -182,6 +290,7 @@
     </div>
 
     <script>
+        // ===== Utility Functions =====
         function parseAddress(address) {
             const parts = address.split(':');
             if (parts.length === 2) {
@@ -191,7 +300,6 @@
         }
 
         function getServiceMetadata(serviceType) {
-            // Service types come in format like "Pool", "JobDeclarator" or "Mint"
             if (serviceType.includes('Pool')) {
                 return { label: 'Pool', iconClass: 'pickaxe-icon' };
             }
@@ -203,6 +311,154 @@
             }
             return { label: serviceType, iconClass: null };
         }
+
+        // ===== Hashrate Chart Classes =====
+        class HashrateCharts {
+            constructor(config = {}) {
+                this.config = {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 6,
+                    tension: 0.1,
+                    backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                    borderColor: '#00ff00',
+                    fill: true,
+                    ...config
+                };
+            }
+
+            createAggregateChart(canvasId, data, animate = true) {
+                const ctx = document.getElementById(canvasId);
+                if (!ctx) throw new Error(`Canvas element #${canvasId} not found`);
+
+                // Destroy old chart first
+                if (ctx.chart) {
+                    ctx.chart.destroy();
+                }
+
+                const labels = data.map(p => this._formatTime(p.timestamp));
+                const values = data.map(p => p.hashrate_hs);
+
+                const chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels,
+                        datasets: [{
+                            label: 'Hashrate',
+                            data: values,
+                            borderColor: this.config.borderColor,
+                            backgroundColor: this.config.backgroundColor,
+                            fill: this.config.fill,
+                            tension: this.config.tension,
+                            pointRadius: this.config.pointRadius,
+                            pointHoverRadius: this.config.pointHoverRadius,
+                            borderWidth: this.config.borderWidth,
+                        }]
+                    },
+                    options: {
+                        responsive: this.config.responsive,
+                        maintainAspectRatio: this.config.maintainAspectRatio,
+                        animation: {
+                            duration: animate ? 400 : 0,
+                        },
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                titleColor: '#00ff00',
+                                bodyColor: '#00ff00',
+                                borderColor: '#00ff00',
+                                borderWidth: 1,
+                                padding: 10,
+                                displayColors: false,
+                                callbacks: {
+                                    label: (context) => {
+                                        const hashrate = context.raw;
+                                        return this._formatHashrate(hashrate);
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: {
+                                    display: true,
+                                    color: 'rgba(0, 255, 0, 0.1)'
+                                },
+                                ticks: {
+                                    color: '#00ff00',
+                                    font: {
+                                        family: "'Courier New', monospace",
+                                        size: 12
+                                    }
+                                }
+                            },
+                            y: {
+                                beginAtZero: false,
+                                grid: {
+                                    display: true,
+                                    color: 'rgba(0, 255, 0, 0.1)'
+                                },
+                                ticks: {
+                                    color: '#00ff00',
+                                    font: {
+                                        family: "'Courier New', monospace",
+                                        size: 12
+                                    },
+                                    callback: (value) => this._formatHashrate(value)
+                                }
+                            }
+                        }
+                    }
+                });
+
+                ctx.chart = chart;
+                return chart;
+            }
+
+            _formatTime(unixSeconds) {
+                const date = new Date(unixSeconds * 1000);
+                return date.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+
+            _formatHashrate(hs) {
+                const units = ['H/s', 'KH/s', 'MH/s', 'GH/s', 'TH/s', 'PH/s'];
+                let value = hs;
+                let unitIndex = 0;
+
+                while (value >= 1000 && unitIndex < units.length - 1) {
+                    value /= 1000;
+                    unitIndex++;
+                }
+
+                return `${value.toFixed(2)} ${units[unitIndex]}`;
+            }
+
+            calculateStats(data) {
+                if (!data || data.length === 0) {
+                    return { min: 0, max: 0, avg: 0, current: 0 };
+                }
+
+                const values = data.map(p => p.hashrate_hs);
+                return {
+                    min: Math.min(...values),
+                    max: Math.max(...values),
+                    avg: values.reduce((a, b) => a + b, 0) / values.length,
+                    current: values[values.length - 1]
+                };
+            }
+        }
+
+        // ===== Main Update Function =====
+        const charts = new HashrateCharts();
+        let timeRangeHours = 1;
 
         async function updateStats() {
             try {
@@ -261,10 +517,9 @@
                     proxiesTbody.innerHTML = '<tr><td colspan="9" style="text-align: center; opacity: 0.5;">No proxies connected</td></tr>';
                 } else {
                     proxies.forEach(proxy => {
-                        console.log('Proxy:', proxy.id, 'work_selection:', proxy.work_selection, 'type:', typeof proxy.work_selection);
                         const row = proxiesTbody.insertRow();
 
-                        // Icon column - show block icon if template provider, otherwise miner icon
+                        // Icon column
                         const iconCell = row.insertCell();
                         iconCell.className = 'proxies-icon-cell';
                         if (proxy.work_selection === true) {
@@ -276,7 +531,7 @@
                         row.insertCell().textContent = proxy.id;
                         row.insertCell().innerHTML = `<span class="address">${proxy.address}</span>`;
 
-                        // Template Provider column - show Yes or No
+                        // Template Provider column
                         const templateCell = row.insertCell();
                         templateCell.style.textAlign = 'center';
                         templateCell.textContent = proxy.work_selection === true ? 'Yes' : 'No';
@@ -288,10 +543,58 @@
                         row.insertCell().textContent = proxy.last_share_at || 'Never';
                     });
                 }
+
+                // Update hashrate chart
+                try {
+                    await updateHashrateChart();
+                } catch (err) {
+                    console.warn('Hashrate chart not available:', err);
+                }
             } catch (error) {
                 console.error('Failed to fetch stats:', error);
             }
         }
+
+        async function updateHashrateChart() {
+            try {
+                const now = Math.floor(Date.now() / 1000);
+                const windowSeconds = timeRangeHours * 3600;
+                const from = now - windowSeconds;
+                const to = now;
+
+                const url = `/api/hashrate?from=${from}&to=${to}`;
+                const response = await fetch(url);
+
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+
+                if (data.data && data.data.length > 0) {
+                    charts.createAggregateChart('aggregate-chart', data.data, false);
+                    const stats = charts.calculateStats(data.data);
+                    document.getElementById('current-hashrate').textContent = charts._formatHashrate(stats.current);
+                    document.getElementById('avg-hashrate').textContent = charts._formatHashrate(stats.avg);
+                    document.getElementById('peak-hashrate').textContent = charts._formatHashrate(stats.max);
+                    document.getElementById('low-hashrate').textContent = charts._formatHashrate(stats.min);
+                }
+            } catch (error) {
+                console.warn('Could not load hashrate data:', error);
+            }
+        }
+
+        // Time range button handling
+        document.querySelectorAll('.time-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const hours = parseInt(e.target.getAttribute('data-hours'));
+                timeRangeHours = hours;
+
+                // Update active button
+                document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+
+                // Update chart
+                updateHashrateChart();
+            });
+        });
 
         // Update immediately and then every 3 seconds
         updateStats();

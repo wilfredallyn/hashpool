@@ -18,6 +18,8 @@
   bitcoindDataDir = "${config.devenv.root}/.devenv/state/bitcoind";
   translatorWalletDb = "${config.devenv.root}/.devenv/state/translator/wallet.sqlite";
   mintDb = "${config.devenv.root}/.devenv/state/mint/mint.sqlite";
+  statsPoolMetricsDb = "${config.devenv.root}/.devenv/state/stats-pool/metrics.db";
+  statsProxyMetricsDb = "${config.devenv.root}/.devenv/state/stats-proxy/metrics.db";
 
   # Service ports (now loaded from config files)
   # These are kept for compatibility but the actual ports are defined in:
@@ -85,6 +87,8 @@ in {
       mkdir -p ${config.devenv.root}/logs
       mkdir -p $(dirname ${translatorWalletDb})
       mkdir -p $(dirname ${mintDb})
+      mkdir -p $(dirname ${statsPoolMetricsDb})
+      mkdir -p $(dirname ${statsProxyMetricsDb})
     '';
     before = ["devenv:processes:proxy" "devenv:processes:pool" "devenv:processes:stats_pool" "devenv:processes:stats_proxy" "devenv:processes:web_pool" "devenv:processes:web_proxy"];
   };
@@ -208,7 +212,8 @@ in {
     stats_pool = {
       exec = withLogging ''
         cd ${config.devenv.root} && cargo -C roles/stats-pool -Z unstable-options run -- \
-          --config ${config.devenv.root}/config/stats-pool.config.toml
+          --config ${config.devenv.root}/config/stats-pool.config.toml \
+          --metrics-db-path ${statsPoolMetricsDb}
       '' "stats_pool.log";
     };
 
@@ -217,7 +222,8 @@ in {
         cd ${config.devenv.root} && cargo -C roles/stats-proxy -Z unstable-options run -- \
           --config ${config.devenv.root}/config/stats-proxy.config.toml \
           --tproxy-config ${config.devenv.root}/config/tproxy.config.toml \
-          --shared-config ${config.devenv.root}/config/shared/miner.toml
+          --shared-config ${config.devenv.root}/config/shared/miner.toml \
+          --db-path ${statsProxyMetricsDb}
       '' "stats_proxy.log";
     };
 

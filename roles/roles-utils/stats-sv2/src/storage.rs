@@ -286,7 +286,8 @@ mod tests {
         let results = storage.query_hashrate(1, 0, 2000).await.unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].timestamp, 1000);
-        assert_eq!(results[0].hashrate_hs, 10.0); // 100 / 10 seconds
+        // 100 difficulty / 10 seconds = 10 H/s
+        assert_eq!(results[0].hashrate_hs, 10.0);
     }
 
     #[tokio::test]
@@ -317,7 +318,8 @@ mod tests {
         // Verify they're in order
         for i in 0..5 {
             assert_eq!(results[i].timestamp, 1000 + (i as u64 * 10));
-            assert_eq!(results[i].hashrate_hs, 100.0); // 1000 / 10 seconds
+            // 1000 difficulty / 10 seconds = 100 H/s
+            assert_eq!(results[i].hashrate_hs, 100.0);
         }
     }
 
@@ -359,9 +361,11 @@ mod tests {
         let results2 = storage.query_hashrate(2, 1000, 3000).await.unwrap();
 
         assert_eq!(results1.len(), 1);
+        // 1000 difficulty / 10 seconds = 100 H/s
         assert_eq!(results1[0].hashrate_hs, 100.0);
 
         assert_eq!(results2.len(), 1);
+        // 500 difficulty / 10 seconds = 50 H/s
         assert_eq!(results2[0].hashrate_hs, 50.0);
     }
 
@@ -402,7 +406,7 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].timestamp, timestamp);
-        // 2000 / 10 = 200 h/s aggregate
+        // (1000 + 1000) difficulty / 10 seconds = 200 H/s aggregate
         assert_eq!(results[0].hashrate_hs, 200.0);
     }
 

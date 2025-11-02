@@ -9,7 +9,7 @@
 ///
 /// # Returns
 ///
-/// Hashrate in hashes per second
+/// Hashrate in hashes per second (H/s)
 pub fn derive_hashrate(sum_difficulty: f64, window_seconds: u64) -> f64 {
     if window_seconds == 0 {
         0.0
@@ -45,6 +45,7 @@ mod tests {
     #[test]
     fn test_derive_hashrate_large_values() {
         // Typical case: large difficulty sums
+        // 1M difficulty / 10 = 100k H/s
         let hashrate = derive_hashrate(1_000_000.0, 10);
         assert_eq!(hashrate, 100_000.0);
     }

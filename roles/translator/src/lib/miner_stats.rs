@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
@@ -15,10 +15,9 @@ pub struct MinerInfo {
     pub last_share_time: Option<Instant>,
     pub estimated_hashrate: f64, // H/s
 
-    // Window metrics for time-series collection
-    pub shares_in_window: u64,
-    pub sum_difficulty_in_window: f64,
-    pub window_start: Instant,
+    // Time-series metrics: list of (unix_timestamp_secs, difficulty) for recent shares
+    // Uses absolute Unix timestamps so it survives service restarts
+    pub recent_shares: Vec<(u64, f64)>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,9 +66,7 @@ impl MinerTracker {
             shares_submitted: 0,
             last_share_time: None,
             estimated_hashrate: 0.0,
-            shares_in_window: 0,
-            sum_difficulty_in_window: 0.0,
-            window_start: Instant::now(),
+            recent_shares: Vec::new(),
         };
 
         self.miners.write().await.insert(id, miner);
@@ -92,13 +89,21 @@ impl MinerTracker {
     }
 
     /// Record a share with its difficulty for time-series metrics.
+    /// Shares are stored with their Unix timestamp for time-based rolling window calculation.
     pub async fn record_share(&self, id: u32, difficulty: f64) {
         let mut miners = self.miners.write().await;
         if let Some(miner) = miners.get_mut(&id) {
             miner.shares_submitted += 1;
-            miner.last_share_time = Some(Instant::now());
-            miner.shares_in_window += 1;
-            miner.sum_difficulty_in_window += difficulty;
+            let now = Instant::now();
+            miner.last_share_time = Some(now);
+
+            // Get current Unix timestamp in seconds
+            let unix_timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+
+            miner.recent_shares.push((unix_timestamp, difficulty));
         }
     }
 

@@ -28,10 +28,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stats = Arc::new(StatsData::new());
 
     // Initialize metrics storage with SQLite backend
-    if let Err(e) = stats.init_metrics_storage(None).await {
+    if let Err(e) = stats.init_metrics_storage(Some(&config.metrics_db_path)).await {
         error!("Failed to initialize metrics storage: {}", e);
     } else {
-        info!("Metrics storage initialized");
+        info!("Metrics storage initialized at {}", config.metrics_db_path);
     }
 
     let tcp_listener = TcpListener::bind(&config.tcp_address).await?;

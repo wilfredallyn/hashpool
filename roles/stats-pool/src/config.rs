@@ -8,6 +8,7 @@ pub struct Config {
     pub staleness_threshold_secs: u64,
     pub request_timeout_secs: u64,
     pub pool_idle_timeout_secs: u64,
+    pub metrics_db_path: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,6 +104,13 @@ impl Config {
             .or_else(|| stats_pool_config.server.http_listen_address)
             .ok_or("Missing required config: server.http_listen_address")?;
 
+        let metrics_db_path = args
+            .iter()
+            .position(|arg| arg == "--metrics-db-path")
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+            .unwrap_or_else(|| ".devenv/state/stats-pool/metrics.db".to_string());
+
         Ok(Config {
             tcp_address,
             http_address,
@@ -118,6 +126,7 @@ impl Config {
                 .http_client
                 .pool_idle_timeout_secs
                 .unwrap_or(300),
+            metrics_db_path,
         })
     }
 }

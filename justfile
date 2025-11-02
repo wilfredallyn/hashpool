@@ -135,12 +135,12 @@ clean TYPE="":
         echo "testnet4 data deleted"; \
     elif [ "{{TYPE}}" = "stats" ]; then \
         echo "deleting stats data..."; \
-        rm -f .devenv/state/stats-pool/stats.sqlite \
-              .devenv/state/stats-pool/stats.sqlite-shm \
-              .devenv/state/stats-pool/stats.sqlite-wal \
-              .devenv/state/stats-proxy/stats.sqlite \
-              .devenv/state/stats-proxy/stats.sqlite-shm \
-              .devenv/state/stats-proxy/stats.sqlite-wal; \
+        rm -f .devenv/state/stats-pool/metrics.db \
+              .devenv/state/stats-pool/metrics.db-shm \
+              .devenv/state/stats-pool/metrics.db-wal \
+              .devenv/state/stats-proxy/metrics.db \
+              .devenv/state/stats-proxy/metrics.db-shm \
+              .devenv/state/stats-proxy/metrics.db-wal; \
         echo "stats data deleted"; \
     elif [ "{{TYPE}}" = "logs" ]; then \
         echo "deleting logs..."; \

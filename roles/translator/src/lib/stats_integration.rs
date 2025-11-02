@@ -86,23 +86,43 @@ impl StatsSnapshotProvider for TranslatorSv2 {
 
 impl TranslatorSv2 {
     /// Get a ServiceSnapshot for time-series metrics collection.
+    /// Uses time-based rolling window: calculates metrics from shares in the last 10 seconds.
+    /// Uses absolute Unix timestamps so metrics survive service restarts.
     pub fn get_metrics_snapshot(&self) -> ServiceSnapshot {
         let downstreams = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 self.miner_tracker.get_all_miners().await
                     .into_iter()
-                    .map(|miner| DownstreamSnapshot {
-                        downstream_id: miner.id,
-                        name: miner.name,
-                        address: if self.config.redact_ip {
-                            "REDACTED".to_string()
-                        } else {
-                            miner.address.to_string()
-                        },
-                        shares_lifetime: miner.shares_submitted,
-                        shares_in_window: miner.shares_in_window,
-                        sum_difficulty_in_window: miner.sum_difficulty_in_window,
-                        timestamp: unix_timestamp(),
+                    .map(|miner| {
+                        // Calculate sum of difficulties for shares in the last 10 seconds
+                        // Using Unix timestamps (absolute time) not Instant (relative to process start)
+                        let now_unix = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+
+                        let sum_difficulty_in_window: f64 = miner.recent_shares.iter()
+                            .filter(|(timestamp, _)| now_unix.saturating_sub(*timestamp) <= 10)
+                            .map(|(_, difficulty)| difficulty)
+                            .sum();
+
+                        let shares_in_window = miner.recent_shares.iter()
+                            .filter(|(timestamp, _)| now_unix.saturating_sub(*timestamp) <= 10)
+                            .count() as u64;
+
+                        DownstreamSnapshot {
+                            downstream_id: miner.id,
+                            name: miner.name,
+                            address: if self.config.redact_ip {
+                                "REDACTED".to_string()
+                            } else {
+                                miner.address.to_string()
+                            },
+                            shares_lifetime: miner.shares_submitted,
+                            shares_in_window,
+                            sum_difficulty_in_window,
+                            timestamp: unix_timestamp(),
+                        }
                     })
                     .collect()
             })

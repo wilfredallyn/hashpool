@@ -1,10 +1,11 @@
 use axum::{
-    extract::State,
+    extract::{Path, Query, State},
     http::StatusCode,
     response::{Html, IntoResponse},
     routing::get,
     Json, Router,
 };
+use serde::Deserialize;
 use serde_json::json;
 use std::sync::{Arc, OnceLock};
 use tracing::info;
@@ -15,16 +16,29 @@ use web_utils::format_elapsed_time;
 
 static DASHBOARD_PAGE_HTML: OnceLock<String> = OnceLock::new();
 static CLIENT_POLL_INTERVAL_SECS: OnceLock<u64> = OnceLock::new();
+static STATS_POOL_URL: OnceLock<String> = OnceLock::new();
 
 const DASHBOARD_PAGE_TEMPLATE: &str = include_str!("../templates/dashboard.html");
+
+#[derive(Deserialize)]
+pub struct TimeRangeQuery {
+    pub from: u64,
+    pub to: u64,
+}
 
 pub async fn run_http_server(
     address: String,
     storage: Arc<SnapshotStorage>,
     client_poll_interval_secs: u64,
+    stats_pool_url: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Store the polling interval for use in dashboard_page
     let _ = CLIENT_POLL_INTERVAL_SECS.set(client_poll_interval_secs);
+
+    // Store stats pool URL for hashrate proxying
+    if let Some(url) = stats_pool_url {
+        let _ = STATS_POOL_URL.set(url);
+    }
 
     let app = Router::new()
         .route("/favicon.ico", get(serve_favicon))
@@ -33,6 +47,8 @@ pub async fn run_http_server(
         .route("/api/stats", get(api_stats_handler))
         .route("/api/services", get(api_services_handler))
         .route("/api/connections", get(api_connections_handler))
+        .route("/api/hashrate", get(api_aggregate_hashrate_handler))
+        .route("/api/downstream/{id}/hashrate", get(api_downstream_hashrate_handler))
         .route("/health", get(health_handler))
         .with_state(storage);
 
@@ -93,6 +109,57 @@ async fn health_handler(State(storage): State<Arc<SnapshotStorage>>) -> impl Int
         "stale": stale
     });
     (status_code, Json(json_response))
+}
+
+async fn api_aggregate_hashrate_handler(
+    Query(params): Query<TimeRangeQuery>,
+) -> impl IntoResponse {
+    // Proxy the request to stats-pool if available
+    if let Some(stats_pool_url) = STATS_POOL_URL.get() {
+        let url = format!(
+            "{}/api/hashrate?from={}&to={}",
+            stats_pool_url, params.from, params.to
+        );
+
+        match reqwest::Client::new().get(&url).send().await {
+            Ok(response) => {
+                match response.json::<serde_json::Value>().await {
+                    Ok(data) => return (StatusCode::OK, Json(data)).into_response(),
+                    Err(_) => {}
+                }
+            }
+            Err(_) => {}
+        }
+    }
+
+    // Return empty data if stats-pool is unavailable
+    (StatusCode::OK, Json(json!({ "data": [] }))).into_response()
+}
+
+async fn api_downstream_hashrate_handler(
+    Path(downstream_id): Path<u32>,
+    Query(params): Query<TimeRangeQuery>,
+) -> impl IntoResponse {
+    // Proxy the request to stats-pool if available
+    if let Some(stats_pool_url) = STATS_POOL_URL.get() {
+        let url = format!(
+            "{}/api/downstream/{}/hashrate?from={}&to={}",
+            stats_pool_url, downstream_id, params.from, params.to
+        );
+
+        match reqwest::Client::new().get(&url).send().await {
+            Ok(response) => {
+                match response.json::<serde_json::Value>().await {
+                    Ok(data) => return (StatusCode::OK, Json(data)).into_response(),
+                    Err(_) => {}
+                }
+            }
+            Err(_) => {}
+        }
+    }
+
+    // Return empty data if stats-pool is unavailable
+    (StatusCode::OK, Json(json!({ "data": [] }))).into_response()
 }
 
 fn get_pool_stats(storage: Arc<SnapshotStorage>) -> serde_json::Value {
