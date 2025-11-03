@@ -346,7 +346,17 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
             self.group_channel = Some(Arc::new(RwLock::new(group_channel)));
         }
 
-        let nominal_hash_rate = incoming.nominal_hash_rate;
+        let mut nominal_hash_rate = incoming.nominal_hash_rate;
+
+        // Apply optional minimum downstream hashrate policy
+        if let Some(min_hashrate) = self.min_downstream_hashrate {
+            if nominal_hash_rate < min_hashrate {
+                info!("Clamping nominal_hash_rate from {} to {} (min_downstream_hashrate policy)",
+                      nominal_hash_rate, min_hashrate);
+                nominal_hash_rate = min_hashrate;
+            }
+        }
+
         let requested_max_target = incoming.max_target.into_static();
 
         let extranonce_prefix = self
@@ -521,7 +531,17 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
 
         info!("Received OpenExtendedMiningChannel: {}", m);
 
-        let nominal_hash_rate = m.nominal_hash_rate;
+        let mut nominal_hash_rate = m.nominal_hash_rate;
+
+        // Apply optional minimum downstream hashrate policy
+        if let Some(min_hashrate) = self.min_downstream_hashrate {
+            if nominal_hash_rate < min_hashrate {
+                info!("Clamping nominal_hash_rate from {} to {} (min_downstream_hashrate policy)",
+                      nominal_hash_rate, min_hashrate);
+                nominal_hash_rate = min_hashrate;
+            }
+        }
+
         let requested_max_target = m.max_target.into_static();
         let requested_min_rollable_extranonce_size = m.min_extranonce_size;
 

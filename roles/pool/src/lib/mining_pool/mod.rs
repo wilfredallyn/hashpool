@@ -157,6 +157,8 @@ pub struct Downstream {
     pool_tag_string: String,
     // Minimum share difficulty (leading zero bits) filter
     minimum_share_difficulty_bits: Option<u32>,
+    // Optional minimum downstream hashrate policy (in H/s) for channel creation
+    min_downstream_hashrate: Option<f32>,
 }
 
 impl std::fmt::Debug for Downstream {
@@ -215,6 +217,8 @@ pub struct Pool {
     pub stats_registry: Arc<pool_stats::PoolStatsRegistry>,
     // Minimum share difficulty (leading zero bits) filter
     pub minimum_share_difficulty_bits: Option<u32>,
+    // Optional minimum downstream hashrate policy (in H/s) for channel creation
+    pub min_downstream_hashrate: Option<f32>,
 }
 
 impl Downstream {
@@ -284,6 +288,7 @@ impl Downstream {
         let mint_manager = pool.safe_lock(|p| p.mint_manager.clone())?;
         let stats_registry = pool.safe_lock(|p| p.stats_registry.clone())?;
         let minimum_share_difficulty_bits = pool.safe_lock(|p| p.minimum_share_difficulty_bits)?;
+        let min_downstream_hashrate = pool.safe_lock(|p| p.min_downstream_hashrate)?;
 
         // Register downstream with stats and create per-downstream quote dispatcher with callback
         let quote_dispatcher = pool.safe_lock(|p| {
@@ -333,6 +338,7 @@ impl Downstream {
             pool_tag_string: pool_tag,
             locking_key_bytes,
             minimum_share_difficulty_bits,
+            min_downstream_hashrate,
         }));
 
         tokio::spawn(spawn_vardiff_loop(self_.clone(), sender.clone(), id));
@@ -1194,6 +1200,7 @@ impl Pool {
             jd_server_address: config.jd_server_address().map(|s| s.to_string()),
             stats_registry: pool_stats::PoolStatsRegistry::new(),
             minimum_share_difficulty_bits: config.minimum_share_difficulty_bits(),
+            min_downstream_hashrate: config.min_downstream_hashrate(),
         }));
 
         let cloned = pool.clone();

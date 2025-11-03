@@ -76,6 +76,7 @@ pub fn process_cli_args() -> PoolConfig {
                 config.set_minimum_share_difficulty_bits(
                     shared.validation.and_then(|v| v.minimum_share_difficulty_bits),
                 );
+                config.set_min_downstream_hashrate(shared.pool.min_downstream_hashrate);
                 config.set_mint_http_url(Some(shared.mint.url));
             }
             Err(err) => {

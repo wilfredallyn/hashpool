@@ -25,6 +25,11 @@ url = "http://localhost:3338"
 
 [pool]
 port = 34254
+# Optional minimum hashrate (in H/s) to prevent resource exhaustion from weak devices
+# If set, channels claiming less than this hashrate will be clamped to this value
+# Example: 100000000 = 100 MH/s
+# Default: None (no constraint, accept any device)
+# min_downstream_hashrate = 100000000
 
 [proxy]
 port = 34255

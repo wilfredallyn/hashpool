@@ -45,6 +45,8 @@ pub struct PoolConfig {
     minimum_share_difficulty_bits: Option<u32>,
     #[serde(skip)]
     mint_http_url: Option<String>,
+    #[serde(skip)]
+    min_downstream_hashrate: Option<f32>,
 }
 
 impl PoolConfig {
@@ -83,6 +85,7 @@ impl PoolConfig {
             minimum_difficulty: None,
             minimum_share_difficulty_bits: None,
             mint_http_url: None,
+            min_downstream_hashrate: None,
         }
     }
 
@@ -210,6 +213,16 @@ impl PoolConfig {
     /// Sets the mint HTTP endpoint used by the quote poller.
     pub fn set_mint_http_url(&mut self, mint_http_url: Option<String>) {
         self.mint_http_url = mint_http_url;
+    }
+
+    /// Returns the optional minimum downstream hashrate (in H/s) for channel creation policy.
+    pub fn min_downstream_hashrate(&self) -> Option<f32> {
+        self.min_downstream_hashrate
+    }
+
+    /// Sets the minimum downstream hashrate (from shared config).
+    pub fn set_min_downstream_hashrate(&mut self, hashrate: Option<f32>) {
+        self.min_downstream_hashrate = hashrate;
     }
 
     /// Returns the optional stats server address for sending snapshots.

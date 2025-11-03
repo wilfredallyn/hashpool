@@ -9,6 +9,8 @@ pub struct MintConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct PoolConfig {
     pub port: u16,
+    #[serde(default)]
+    pub min_downstream_hashrate: Option<f32>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
