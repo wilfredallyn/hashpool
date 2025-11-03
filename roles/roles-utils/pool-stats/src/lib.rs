@@ -15,6 +15,7 @@ use std::{
 
 use parking_lot::RwLock;
 use quote_dispatcher::QuoteEventCallback;
+use stats_sv2::WindowedMetricsCollector;
 
 /// Get current Unix timestamp in seconds.
 fn unix_timestamp() -> u64 {
@@ -30,8 +31,8 @@ pub struct DownstreamStats {
     pub quotes_created: AtomicU64,
     pub ehash_mined: AtomicU64,
     pub last_share_at: AtomicU64,
-    pub sum_difficulty: AtomicU64, // Fixed-point: multiply by 2^32 to store f64 as u64
-    pub shares_in_window: AtomicU64,
+    // Shared windowed metrics collector for accurate time-series hashrate
+    pub metrics_collector: RwLock<WindowedMetricsCollector>,
 }
 
 impl DownstreamStats {
@@ -41,8 +42,7 @@ impl DownstreamStats {
             quotes_created: AtomicU64::new(0),
             ehash_mined: AtomicU64::new(0),
             last_share_at: AtomicU64::new(0),
-            sum_difficulty: AtomicU64::new(0),
-            shares_in_window: AtomicU64::new(0),
+            metrics_collector: RwLock::new(WindowedMetricsCollector::new(10)), // 10-second window
         }
     }
 
@@ -54,27 +54,27 @@ impl DownstreamStats {
     }
 
     /// Record a share with its difficulty for time-series metrics.
+    /// Uses the shared WindowedMetricsCollector.
     pub fn record_share_with_difficulty(&self, difficulty: f64) {
         let now = unix_timestamp();
         self.shares_submitted.fetch_add(1, Ordering::Relaxed);
-        self.shares_in_window.fetch_add(1, Ordering::Relaxed);
-
-        // Convert f64 difficulty to fixed-point u64 (multiply by 2^32)
-        let difficulty_fixed = (difficulty * (2u64.pow(32) as f64)) as u64;
-        self.sum_difficulty.fetch_add(difficulty_fixed, Ordering::Relaxed);
-
         self.last_share_at.store(now, Ordering::Relaxed);
+
+        // Record with shared metrics collector (handles windowing)
+        let mut collector = self.metrics_collector.write();
+        collector.record_share(difficulty);
     }
 
-    /// Get the sum of difficulties as f64.
-    pub fn get_sum_difficulty(&self) -> f64 {
-        let fixed = self.sum_difficulty.load(Ordering::Relaxed);
-        fixed as f64 / (2u64.pow(32) as f64)
+    /// Get the sum of difficulties in the current window (10 seconds).
+    pub fn sum_difficulty_in_window(&self) -> f64 {
+        let collector = self.metrics_collector.read();
+        collector.sum_difficulty_in_window()
     }
 
     /// Get the number of shares in current window.
-    pub fn shares_in_current_window(&self) -> u64 {
-        self.shares_in_window.load(Ordering::Relaxed)
+    pub fn shares_in_window(&self) -> u64 {
+        let collector = self.metrics_collector.read();
+        collector.shares_in_window()
     }
 }
 

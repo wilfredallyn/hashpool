@@ -897,7 +897,7 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
         // Record share with difficulty for time-series metrics
         if let Some(stats) = self.stats_registry.get_stats(self.id) {
             let target = standard_channel.get_target().clone();
-            let difficulty = target_to_difficulty(target);
+            let difficulty = target_to_difficulty(target.clone());
             stats.record_share_with_difficulty(difficulty);
         }
 

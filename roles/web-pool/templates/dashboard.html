@@ -320,7 +320,8 @@
                     maintainAspectRatio: false,
                     borderWidth: 2,
                     pointRadius: 0,
-                    pointHoverRadius: 6,
+                    pointHoverRadius: 8,
+                    pointHitRadius: 20,  // Larger hit radius for easier tooltip triggering
                     tension: 0.1,
                     backgroundColor: 'rgba(0, 255, 0, 0.1)',
                     borderColor: '#00ff00',
@@ -354,6 +355,7 @@
                             tension: this.config.tension,
                             pointRadius: this.config.pointRadius,
                             pointHoverRadius: this.config.pointHoverRadius,
+                            pointHitRadius: this.config.pointHitRadius,
                             borderWidth: this.config.borderWidth,
                         }]
                     },
@@ -362,6 +364,10 @@
                         maintainAspectRatio: this.config.maintainAspectRatio,
                         animation: {
                             duration: animate ? 400 : 0,
+                        },
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
                         },
                         plugins: {
                             legend: {

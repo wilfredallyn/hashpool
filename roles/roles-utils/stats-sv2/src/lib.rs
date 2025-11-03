@@ -6,10 +6,12 @@
 pub mod metrics;
 pub mod storage;
 pub mod types;
+pub mod windowing;
 
 pub use metrics::derive_hashrate;
 pub use storage::StatsStorage;
 pub use types::{DownstreamSnapshot, ServiceSnapshot, ServiceType};
+pub use windowing::{WindowedMetricsCollector, unix_timestamp};
 
 #[cfg(test)]
 mod tests {

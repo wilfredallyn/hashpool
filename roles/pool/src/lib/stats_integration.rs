@@ -104,8 +104,8 @@ impl Pool {
                         name: format!("translator_{}", id),
                         address,
                         shares_lifetime: stats.shares_submitted.load(std::sync::atomic::Ordering::Relaxed),
-                        shares_in_window: stats.shares_in_current_window(),
-                        sum_difficulty_in_window: stats.get_sum_difficulty(),
+                        shares_in_window: stats.shares_in_window(),
+                        sum_difficulty_in_window: stats.sum_difficulty_in_window(),
                         timestamp: unix_timestamp(),
                     });
                 }
