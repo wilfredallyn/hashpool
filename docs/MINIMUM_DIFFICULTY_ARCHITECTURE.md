@@ -1,8 +1,17 @@
 # Minimum Difficulty Architecture: Problem Analysis and Solution
 
-**Status:** Analysis & Proposed Solution
+**Status:** Phase 0 Complete - Phase 1-4 In Progress
 **Date:** November 2025
 **Context:** Investigation of commit 9f3c27b and subsequent failures
+
+## Current Status
+
+**Phase 0 (Complete):** Reverted broken commit 9f3c27b, restored working baseline with:
+- Config: Added `[mint]` section to translator config
+- Feature: Translator reads `snapshot_poll_interval_secs` from shared pool config
+- Verification: eHash minting is fully operational end-to-end
+
+**Phase 1 (Next):** Add absolute share difficulty filter at both pool and translator level
 
 ## Executive Summary
 
@@ -355,13 +364,13 @@ The baseline SRI (at `/home/evan/work/stratum/`) handles this differently:
 
 ## Implementation Path
 
-### Phase 0: Revert the Broken Commit (CRITICAL FIRST STEP)
+### Phase 0: Revert the Broken Commit (COMPLETE ✓)
 
-**Status:** BLOCKING - Must be done before any other work
+**Status:** COMPLETE - System is stable and eHash minting is operational
 
-**Commit to revert:** `9f3c27b382d75c7a9123e97ceb6b2ed16a46ee8a` ("align downstream difficulty with mint minimum")
+**Commit reverted:** `9f3c27b382d75c7a9123e97ceb6b2ed16a46ee8a` ("align downstream difficulty with mint minimum")
 
-**Why:** This commit introduced the mathematical coupling that broke the translator. Reverting restores a working baseline.
+**Outcome:** Restored working baseline with functioning eHash minting pipeline
 
 **Steps:**
 
@@ -420,31 +429,79 @@ The baseline SRI (at `/home/evan/work/stratum/`) handles this differently:
 
 ---
 
-### Phase 1: Add Share Validation (Non-Breaking, Isolated)
+### Phase 1: Add Absolute Share Difficulty Filter (Non-Breaking, Isolated)
+
+**Objective:** Reject shares with insufficient leading zero bits to prevent low-difficulty spam
+
+**Configuration files:**
+- Pool-side: Add to `config/shared/pool.toml`
+- Miner-side: Add to `config/shared/miner.toml`
+
+```toml
+[validation]
+# Absolute share difficulty filter: minimum leading zero bits required
+# 0 = no check, 32 = typical production value
+minimum_share_difficulty_bits = 32
+```
 
 **Files to modify:**
-- `protocols/ehash/src/work.rs` - Add `get_leading_zero_bits()`
-- `roles/translator/src/lib/sv1/sv1_server/sv1_server.rs` - Add minimum difficulty check
-- `roles/pool/src/lib/mining_pool/message_handler.rs` - Add minimum difficulty check
 
-**Changes:**
-1. Create a helper function to count leading zero bits in a hash
-2. After share passes target check, validate minimum bits
-3. Reject shares with error code `"share-difficulty-too-low"`
+**Pool side (Step 1 - smoke test first):**
+1. **config/shared/pool.toml** - Add `[validation]` section with `minimum_share_difficulty_bits`
+2. **roles/pool/src/lib/config.rs** - Read setting and expose as getter
+3. **roles/pool/src/lib/mining_pool/message_handler.rs** - Add check in share validation
+
+**Miner side (Step 2 - after pool is verified):**
+4. **config/shared/miner.toml** - Add `[validation]` section with `minimum_share_difficulty_bits`
+5. **roles/translator/src/lib/config.rs** - Read setting and expose as getter
+6. **roles/translator/src/args.rs** - Load setting from shared config when `-g` flag provided
+7. **roles/translator/src/lib/sv1/sv1_server/sv1_server.rs** - Add check in share validation
+
+**Implementation steps (smoke test pool first):**
+
+**Step 1: Pool-level validation (commit separately)**
+- Modify `config/shared/pool.toml` to add `[validation]` section
+- Add config field to PoolConfig and read from TOML
+- Implement leading zero bits check in pool's message_handler.rs during share validation
+- Smoke test: Submit low-difficulty shares via SV2, verify rejection
+- Smoke test: High-difficulty shares still accepted
+- Verify: SV1 device still connects and mines normally (no vardiff errors)
+
+**Step 2: Translator-level validation (commit separately, after pool verified)**
+- Modify `config/shared/miner.toml` to add `[validation]` section
+- Add config field to TranslatorConfig
+- Load setting from shared config in args.rs when `-g` flag provided
+- Add check in sv1_server.rs during share validation
+- Smoke test: Connect SV1 miner, verify accepts good shares and rejects bad ones
+- Verify: Miner can reconnect and resume mining after rejection
+
+**Helper function:** Count leading zero bits in share hash (add to utility module)
+```rust
+fn count_leading_zero_bits(hash: &[u8; 32]) -> u32 {
+    // Returns number of leading zero bits in the hash
+}
+```
+
+**Share rejection:** When bits < minimum:
+- Pool: Return error code `"share-difficulty-too-low"`
+- Translator: Same error propagation to SV1 miner
 
 **Critical safeguard:** These are **purely additive** changes. No code is removed. The existing SV1 protocol state machine remains untouched.
 
-**Impact:** None—adds validation without changing channel logic
+**Impact:** None on channel creation or vardiff—adds validation without changing resource management logic
 
 **Why this avoids the last failure:** The SV1 server's `min_individual_miner_hashrate` field and its vardiff logic are completely unaffected. We're adding validation downstream of this, not removing it.
 
 **Metrics:**
 - Track "shares rejected for low difficulty" separately for operator debugging
 
-**Testing:**
-- CPU miner (8-bit shares) gets rejected
-- Normal miner (32+ bit shares) accepted
-- **Most importantly:** Verify SV1 device connects normally and gets correct targets
+**Testing checklist (for each commit):**
+- [ ] Low-difficulty share (8 bits) gets rejected
+- [ ] Minimum-difficulty share (32 bits) accepted
+- [ ] High-difficulty share (64 bits) accepted
+- [ ] **Most importantly:** Verify SV1 device connects normally and gets correct targets
+- [ ] Hashrate metrics are still correct
+- [ ] No vardiff errors in logs
 
 ### Phase 2: Decouple Configuration (Without Removing Dependencies)
 
@@ -776,14 +833,41 @@ The following changes assume commit 9f3c27b has been reverted and the system is 
 
 ## Next Steps
 
-1. **Phase 0:** Revert commit 9f3c27b (handle conflicts, verify miners connect)
-2. **Phase 1:** Implement share validation layer (add `get_leading_zero_bits()`, validate on share submit)
-3. **Phase 2:** Decouple configuration (separate minimum_difficulty from min_individual_miner_hashrate)
-4. **Phase 3:** Add optional pool policy (new `min_downstream_hashrate` config)
-5. **Phase 4:** Cleanup (remove bad derivation function, update docs)
-6. **Testing:**
-   - CPU miners get rejected
-   - High-speed miners work correctly with proper hashrate metrics
-   - All three components (validation, vardiff, channel policy) work independently
-7. **Documentation:** Update operator guides with new config parameters
+**Phase 0 COMPLETE ✓**
+
+1. **Phase 1:** Implement absolute share difficulty filter (two separate commits)
+   - Step 1a: Pool-level validation with config (smoke test first)
+   - Step 1b: Translator-level validation with config
+   - Both read `[validation] minimum_share_difficulty_bits` from shared config
+
+2. **Phase 2:** Decouple configuration (separate minimum_difficulty from min_individual_miner_hashrate)
+   - Stop deriving min_individual_miner_hashrate from minimum_difficulty
+   - Ensure vardiff still receives proper initialization value
+
+3. **Phase 3:** Add optional pool policy (new `min_downstream_hashrate` config)
+   - Separate channel creation constraint from share validation
+
+4. **Phase 4:** Cleanup (remove bad derivation function, update docs)
+
+**Testing for Phase 1:**
+- CPU miner with 8-bit shares gets rejected ✓
+- Normal miner with 32+ bit shares accepted ✓
+- High-speed miners work correctly with proper hashrate metrics ✓
+- SV1 device connects normally without vardiff errors ✓
+
+**Configuration structure (Phase 1):**
+
+Pool-side (`config/shared/pool.toml`):
+```toml
+[validation]
+minimum_share_difficulty_bits = 32
+```
+
+Miner-side (`config/shared/miner.toml`):
+```toml
+[validation]
+minimum_share_difficulty_bits = 32
+```
+
+Both sides read their respective config file. The translator loads miner.toml when `-g config/shared/miner.toml` is provided.
 
