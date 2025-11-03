@@ -42,6 +42,8 @@ pub struct PoolConfig {
     #[serde(skip)]
     minimum_difficulty: Option<u32>,
     #[serde(skip)]
+    minimum_share_difficulty_bits: Option<u32>,
+    #[serde(skip)]
     mint_http_url: Option<String>,
 }
 
@@ -79,6 +81,7 @@ impl PoolConfig {
             jd_server_address: None,
             sv2_messaging: None,
             minimum_difficulty: None,
+            minimum_share_difficulty_bits: None,
             mint_http_url: None,
         }
     }
@@ -187,6 +190,16 @@ impl PoolConfig {
     /// Sets the minimum difficulty override (from shared config).
     pub fn set_minimum_difficulty(&mut self, minimum_difficulty: Option<u32>) {
         self.minimum_difficulty = minimum_difficulty;
+    }
+
+    /// Returns the optional minimum share difficulty bits.
+    pub fn minimum_share_difficulty_bits(&self) -> Option<u32> {
+        self.minimum_share_difficulty_bits
+    }
+
+    /// Sets the minimum share difficulty bits (from shared config).
+    pub fn set_minimum_share_difficulty_bits(&mut self, bits: Option<u32>) {
+        self.minimum_share_difficulty_bits = bits;
     }
 
     /// Returns the optional mint HTTP endpoint used by the quote poller.

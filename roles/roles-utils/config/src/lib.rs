@@ -76,6 +76,12 @@ impl WalletConfig {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct ValidationConfig {
+    #[serde(default)]
+    pub minimum_share_difficulty_bits: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct EhashConfig {
     pub minimum_difficulty: u32,
 }
@@ -93,6 +99,7 @@ pub struct MinerGlobalConfig {
     pub mint: MintConfig,
     pub pool: PoolConfig,
     pub proxy: ProxyConfig,
+    pub validation: Option<ValidationConfig>,
     pub ehash: Option<EhashConfig>,
     pub faucet: Option<FaucetConfig>,
 }
@@ -137,6 +144,7 @@ pub struct PoolGlobalConfig {
     pub pool: PoolConfig,
     pub proxy: ProxyConfig,
     pub sv2_messaging: Option<Sv2MessagingConfig>,
+    pub validation: Option<ValidationConfig>,
     pub ehash: Option<EhashConfig>,
 }
 

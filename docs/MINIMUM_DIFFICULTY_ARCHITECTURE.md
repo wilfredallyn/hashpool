@@ -11,7 +11,13 @@
 - Feature: Translator reads `snapshot_poll_interval_secs` from shared pool config
 - Verification: eHash minting is fully operational end-to-end
 
-**Phase 1 (Next):** Add absolute share difficulty filter at both pool and translator level
+**Phase 1 (Complete):** Add absolute share difficulty filter at pool level only
+- Pool-side validation: Implemented and tested ✅
+- Config loading: Added to translator config (but not used)
+- Translator-side validation: **Removed** (deferred to JDC + error forwarding design captured)
+- Rationale: Pool-level validation sufficient for now; translator-side adds complexity and overhead; JDC will handle this better in future architecture
+
+**Phase 2-4 (Next):** Proceed with decoupling and resource policy
 
 ## Executive Summary
 
@@ -446,34 +452,43 @@ minimum_share_difficulty_bits = 32
 
 **Files to modify:**
 
-**Pool side (Step 1 - smoke test first):**
-1. **config/shared/pool.toml** - Add `[validation]` section with `minimum_share_difficulty_bits`
-2. **roles/pool/src/lib/config.rs** - Read setting and expose as getter
-3. **roles/pool/src/lib/mining_pool/message_handler.rs** - Add check in share validation
+**Pool side (Completed):**
+1. **config/shared/pool.toml** - ✅ Added `[validation]` section with `minimum_share_difficulty_bits`
+2. **roles/pool/src/lib/config.rs** - ✅ Read setting and expose as getter
+3. **roles/pool/src/lib/mining_pool/message_handler.rs** - ✅ Added check in share validation
 
-**Miner side (Step 2 - after pool is verified):**
-4. **config/shared/miner.toml** - Add `[validation]` section with `minimum_share_difficulty_bits`
-5. **roles/translator/src/lib/config.rs** - Read setting and expose as getter
-6. **roles/translator/src/args.rs** - Load setting from shared config when `-g` flag provided
-7. **roles/translator/src/lib/sv1/sv1_server/sv1_server.rs** - Add check in share validation
+**Translator side (Removed):**
+- **config/shared/miner.toml** - ~~Add `[validation]` section~~ (Completely removed)
+- **roles/translator/src/lib/config.rs** - ~~Read setting and expose as getter~~ (Removed)
+- **roles/translator/src/args.rs** - ~~Load setting from shared config~~ (Removed)
+- **roles/translator/src/lib/sv1/sv1_server/sv1_server.rs** - ~~Add check in share validation~~ (Removed)
 
-**Implementation steps (smoke test pool first):**
+**Implementation status:**
 
-**Step 1: Pool-level validation (commit separately)**
-- Modify `config/shared/pool.toml` to add `[validation]` section
-- Add config field to PoolConfig and read from TOML
-- Implement leading zero bits check in pool's message_handler.rs during share validation
-- Smoke test: Submit low-difficulty shares via SV2, verify rejection
-- Smoke test: High-difficulty shares still accepted
-- Verify: SV1 device still connects and mines normally (no vardiff errors)
+**Pool-level validation (Completed & Verified):**
+- ✅ Modified `config/shared/pool.toml` with `[validation]` section
+- ✅ Added config field to PoolConfig and reads from TOML
+- ✅ Implemented leading zero bits check in pool's message_handler.rs during share validation
+- ✅ Low-difficulty shares rejected via SV2
+- ✅ High-difficulty shares accepted
+- ✅ Verified: SV1 device connects and mines normally (no vardiff errors)
+- ✅ Unit tests pass (count_leading_zero_bits and validate_share_difficulty)
 
-**Step 2: Translator-level validation (commit separately, after pool verified)**
-- Modify `config/shared/miner.toml` to add `[validation]` section
-- Add config field to TranslatorConfig
-- Load setting from shared config in args.rs when `-g` flag provided
-- Add check in sv1_server.rs during share validation
-- Smoke test: Connect SV1 miner, verify accepts good shares and rejects bad ones
-- Verify: Miner can reconnect and resume mining after rejection
+**Translator-level validation (Completely removed):**
+- **Decision:** Remove all translator-side validation code and config in favor of pool-only approach
+- **What was removed:**
+  - `minimum_share_difficulty_bits` field from TranslatorConfig
+  - `set_minimum_share_difficulty_bits()` setter method
+  - Code in args.rs that loads config from global file
+  - TODO comment in sv1_server.rs
+  - `[validation]` section from config/shared/miner.toml
+- **Rationale:**
+  - Pool-level validation is sufficient for current requirements
+  - Translator-side validation requires block header reconstruction (SHA256 per share)
+  - Performance overhead not justified until JDC integration
+  - Better architecture: Pool validates; if JDC added later, JDC handles validation natively
+  - Error forwarding mechanism documented in `TRANSLATOR_REJECTED_SHARE_ERROR_FORWARDING.md` for future reference
+- **Impact:** Translator is now back to pre-Phase1 state; forwards all shares to pool unchanged
 
 **Helper function:** Count leading zero bits in share hash (add to utility module)
 ```rust
@@ -486,42 +501,52 @@ fn count_leading_zero_bits(hash: &[u8; 32]) -> u32 {
 - Pool: Return error code `"share-difficulty-too-low"`
 - Translator: Same error propagation to SV1 miner
 
-**Critical safeguard:** These are **purely additive** changes. No code is removed. The existing SV1 protocol state machine remains untouched.
+**Critical safeguard:** Pool-level validation is **purely additive** at the protocol layer. The existing SV1 protocol state machine remains untouched. No translator code was modified.
 
-**Impact:** None on channel creation or vardiff—adds validation without changing resource management logic
+**Translator-side validation:** Removed after analysis determined:
+1. Pool-level validation is sufficient
+2. Translator-side adds SHA256 overhead per share
+3. Pool already returns error codes via SV2 protocol
+4. Better to defer to JDC architecture (which constructs templates natively)
+5. Error forwarding design captured for future reference
 
-**Why this avoids the last failure:** The SV1 server's `min_individual_miner_hashrate` field and its vardiff logic are completely unaffected. We're adding validation downstream of this, not removing it.
+**Impact:** None on channel creation or vardiff—pool adds validation without changing resource management logic. Translator behavior unchanged (forwards all shares to pool).
+
+**Why this avoids the last failure:** The SV1 server's `min_individual_miner_hashrate` field and its vardiff logic are completely unaffected. No translator code was removed or modified.
 
 **Metrics:**
-- Track "shares rejected for low difficulty" separately for operator debugging
+- Track "shares rejected for low difficulty" separately for operator debugging (pool-side)
 
-**Testing checklist (for each commit):**
-- [ ] Low-difficulty share (8 bits) gets rejected
-- [ ] Minimum-difficulty share (32 bits) accepted
-- [ ] High-difficulty share (64 bits) accepted
-- [ ] **Most importantly:** Verify SV1 device connects normally and gets correct targets
-- [ ] Hashrate metrics are still correct
-- [ ] No vardiff errors in logs
+**Testing checklist (completed):**
+- [✅] Low-difficulty share (8 bits) gets rejected by pool
+- [✅] Minimum-difficulty share (32 bits) accepted by pool
+- [✅] High-difficulty share (64 bits) accepted by pool
+- [✅] **Verified:** SV1 device connects normally and gets correct targets
+- [✅] Hashrate metrics are still correct (no vardiff errors)
+- [✅] No translator changes needed; forwarding works as before
 
-### Phase 2: Decouple Configuration (Without Removing Dependencies)
+### Phase 2: Decouple Configuration (Pool-Only)
 
-**Files to modify:**
-- `config/shared/pool.toml` - Keep `[ehash] minimum_difficulty`
-- `roles/pool/src/lib/config.rs` - Add `minimum_difficulty_bits` field (NOT derived)
-- `roles/translator/src/lib/config.rs` - Same
-- `roles/translator/src/args.rs` - CHANGE ONLY how `minimum_difficulty_bits` is read, NOT how `min_individual_miner_hashrate` is set
+**Objective:** Remove the mathematical coupling between `minimum_difficulty` and `min_individual_miner_hashrate` at the pool level. Keep translator unchanged (already removed from translator in Phase 1 cleanup).
 
-**Changes:**
-1. Read `minimum_difficulty_bits` directly from config (no math derivation)
-2. Pass to share validation layer only
-3. **CRITICAL:** DO NOT remove the code that sets `min_individual_miner_hashrate`—it's still needed for vardiff
-4. Either:
-   - Keep `min_individual_miner_hashrate` at a sensible default (e.g., 0.0 = no constraint), OR
-   - Create a separate translator config value for it (e.g., `[translator] vardiff_start_hashrate`)
+**Files to modify (Pool only):**
+- `config/shared/pool.toml` - Keep `[ehash] minimum_difficulty` and `[validation] minimum_share_difficulty_bits`
+- `roles/pool/src/lib/config.rs` - Ensure `minimum_difficulty_bits` is read directly (already done)
+- `roles/pool/src/lib/mining_pool/` - Verify share validation uses only `minimum_difficulty_bits`, not derived from `minimum_difficulty`
+
+**Translator status:**
+- ✅ Translator does NOT read or apply `minimum_difficulty_bits` (removed in Phase 1)
+- ✅ Translator forwards all shares to pool; pool validates and rejects if needed
+- ✅ No translator changes needed for Phase 2
+
+**Changes (Pool):**
+1. Verify `minimum_difficulty_bits` is read directly from config (not derived from `minimum_difficulty`)
+2. Pass only to pool's share validation layer
+3. Do NOT change `min_individual_miner_hashrate` usage in pool (still exists, just not derived)
 
 **Why this is different from last time:**
 - Last attempt: Removed `set_min_hashrate_from_difficulty()` entirely → `min_individual_miner_hashrate` became 0.0 → SV1 broke
-- This attempt: Only remove the DERIVATION, keep the FIELD and its usage
+- This attempt: Only remove the DERIVATION at pool level, keep the FIELD and its usage; translator already removed in Phase 1
 
 **Example change (what NOT to do):**
 ```rust

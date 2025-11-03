@@ -6,6 +6,7 @@
 //! reacts to various mining-related messages received from a connected downstream miner.
 
 use super::super::mining_pool::Downstream;
+use super::super::share_validation;
 use binary_sv2::Deserialize;
 use ehash::QuoteDispatchError;
 use mint_quote_sv2::CompressedPubKey;
@@ -106,6 +107,34 @@ async fn dispatch_quote(
 ///
 /// This ensures quote failures don't break the mining protocol while still
 /// providing visibility into any issues via logging.
+
+/// Helper function to validate minimum share difficulty and return an error response if needed.
+///
+/// Returns `Some(error_response)` if validation fails and should be sent to miner,
+/// or `None` if validation passes.
+fn validate_minimum_share_difficulty(
+    header_hash: &[u8; 32],
+    minimum_bits: Option<u32>,
+    channel_id: u32,
+    sequence_number: u32,
+) -> Option<SendTo<()>> {
+    if let Some(min_bits) = minimum_bits {
+        if let Err(e) = share_validation::validate_share_difficulty(header_hash, Some(min_bits)) {
+            error!("SubmitSharesError: channel_id: {}, sequence_number: {}, error_code: share-difficulty-too-low ❌ ({})", channel_id, sequence_number, e);
+            let error = SubmitSharesError {
+                channel_id,
+                sequence_number,
+                error_code: "share-difficulty-too-low"
+                    .to_string()
+                    .try_into()
+                    .expect("error code must be valid string"),
+            };
+            return Some(SendTo::Respond(Mining::SubmitSharesError(error)));
+        }
+    }
+    None
+}
+
 fn send_share_quote_request(
     downstream: &Downstream,
     channel_id: u32,
@@ -876,11 +905,16 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
 
         match res {
             Ok(ShareValidationResult::Valid(accepted_share)) => {
+                let header_hash = accepted_share.header_hash_bytes();
+
+                if let Some(error_response) = validate_minimum_share_difficulty(&header_hash, self.minimum_share_difficulty_bits, channel_id, m.sequence_number) {
+                    return Ok(error_response);
+                }
+
                 info!(
                     "SubmitSharesStandard: valid share | channel_id: {}, sequence_number: {} ☑️",
                     channel_id, m.sequence_number
                 );
-                let header_hash = accepted_share.header_hash_bytes();
                 send_share_quote_request(self, channel_id, m.sequence_number, header_hash, &m);
                 Ok(SendTo::None(None))
             }
@@ -891,6 +925,11 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
                 new_shares_sum,
             )) => {
                 let header_hash = accepted_share.header_hash_bytes();
+
+                if let Some(error_response) = validate_minimum_share_difficulty(&header_hash, self.minimum_share_difficulty_bits, channel_id, m.sequence_number) {
+                    return Ok(error_response);
+                }
+
                 send_share_quote_request(self, channel_id, m.sequence_number, header_hash, &m);
                 let success = SubmitSharesSuccess {
                     channel_id,
@@ -1051,11 +1090,16 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
 
         match res {
             Ok(ShareValidationResult::Valid(accepted_share)) => {
+                let header_hash = accepted_share.header_hash_bytes();
+
+                if let Some(error_response) = validate_minimum_share_difficulty(&header_hash, self.minimum_share_difficulty_bits, channel_id, m.sequence_number) {
+                    return Ok(error_response);
+                }
+
                 info!(
                     "SubmitSharesExtended: valid share | channel_id: {}, sequence_number: {} ☑️",
                     channel_id, m.sequence_number
                 );
-                let header_hash = accepted_share.header_hash_bytes();
                 send_extended_share_quote_request(
                     self,
                     channel_id,
@@ -1072,6 +1116,11 @@ impl ParseMiningMessagesFromDownstream<()> for Downstream {
                 new_shares_sum,
             )) => {
                 let header_hash = accepted_share.header_hash_bytes();
+
+                if let Some(error_response) = validate_minimum_share_difficulty(&header_hash, self.minimum_share_difficulty_bits, channel_id, m.sequence_number) {
+                    return Ok(error_response);
+                }
+
                 send_extended_share_quote_request(
                     self,
                     channel_id,

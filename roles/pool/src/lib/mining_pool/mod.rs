@@ -155,6 +155,8 @@ pub struct Downstream {
     coinbase_reward_script: CoinbaseRewardScript,
     // string to be written into the coinbase scriptSig on non-JD jobs
     pool_tag_string: String,
+    // Minimum share difficulty (leading zero bits) filter
+    minimum_share_difficulty_bits: Option<u32>,
 }
 
 impl std::fmt::Debug for Downstream {
@@ -211,6 +213,8 @@ pub struct Pool {
     pub jd_server_address: Option<String>,
     // Registry for tracking downstream statistics (shares, quotes, ehash, last_share)
     pub stats_registry: Arc<pool_stats::PoolStatsRegistry>,
+    // Minimum share difficulty (leading zero bits) filter
+    pub minimum_share_difficulty_bits: Option<u32>,
 }
 
 impl Downstream {
@@ -279,6 +283,7 @@ impl Downstream {
         let pool_tag = pool.safe_lock(|p| p.pool_tag_string.clone())?;
         let mint_manager = pool.safe_lock(|p| p.mint_manager.clone())?;
         let stats_registry = pool.safe_lock(|p| p.stats_registry.clone())?;
+        let minimum_share_difficulty_bits = pool.safe_lock(|p| p.minimum_share_difficulty_bits)?;
 
         // Register downstream with stats and create per-downstream quote dispatcher with callback
         let quote_dispatcher = pool.safe_lock(|p| {
@@ -327,6 +332,7 @@ impl Downstream {
             coinbase_reward_script,
             pool_tag_string: pool_tag,
             locking_key_bytes,
+            minimum_share_difficulty_bits,
         }));
 
         tokio::spawn(spawn_vardiff_loop(self_.clone(), sender.clone(), id));
@@ -1187,6 +1193,7 @@ impl Pool {
             locking_key_bytes,
             jd_server_address: config.jd_server_address().map(|s| s.to_string()),
             stats_registry: pool_stats::PoolStatsRegistry::new(),
+            minimum_share_difficulty_bits: config.minimum_share_difficulty_bits(),
         }));
 
         let cloned = pool.clone();
