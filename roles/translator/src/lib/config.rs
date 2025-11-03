@@ -149,6 +149,11 @@ impl TranslatorConfig {
     pub fn log_dir(&self) -> Option<&Path> {
         self.log_file.as_deref()
     }
+
+    /// Set the snapshot poll interval from shared config
+    pub fn set_snapshot_poll_interval_secs(&mut self, interval: u64) {
+        self.snapshot_poll_interval_secs = interval;
+    }
 }
 
 /// Configuration settings for managing difficulty adjustments on the downstream connection.
