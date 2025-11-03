@@ -93,17 +93,6 @@ pub mod quote_poller;
 // Module for quote dispatch hook implementation
 pub mod quote_dispatch_hook;
 
-fn derive_min_hashrate_from_difficulty(min_bits: u32, shares_per_minute: f32) -> f32 {
-    if shares_per_minute <= f32::EPSILON {
-        return 0.0;
-    }
-
-    let hashes_required = 2_f64.powi(min_bits as i32);
-    let hashrate = (hashes_required * shares_per_minute as f64) / 60.0;
-
-    hashrate as f32
-}
-
 /// Represents a generic SV2 message with a static lifetime.
 pub type Message = AnyMessage<'static>;
 /// A standard SV2 frame containing a message.
@@ -166,7 +155,6 @@ pub struct Downstream {
     coinbase_reward_script: CoinbaseRewardScript,
     // string to be written into the coinbase scriptSig on non-JD jobs
     pool_tag_string: String,
-    min_individual_miner_hashrate: f32,
 }
 
 impl std::fmt::Debug for Downstream {
@@ -176,10 +164,6 @@ impl std::fmt::Debug for Downstream {
             .field("requires_standard_jobs", &self.requires_standard_jobs)
             .field("requires_custom_work", &self.requires_custom_work)
             .field("share_batch_size", &self.share_batch_size)
-            .field(
-                "min_individual_miner_hashrate",
-                &self.min_individual_miner_hashrate,
-            )
             .finish()
     }
 }
@@ -223,7 +207,6 @@ pub struct Pool {
     pub mint_connection: Option<Arc<tokio::sync::Mutex<mint_connection::MintConnection>>>,
     // Miner's compressed public key for quote attribution (33 bytes as Vec<u8>)
     locking_key_bytes: Option<Vec<u8>>,
-    min_individual_miner_hashrate: f32,
     // Optional JD-Server address for stats reporting
     pub jd_server_address: Option<String>,
     // Registry for tracking downstream statistics (shares, quotes, ehash, last_share)
@@ -249,7 +232,6 @@ impl Downstream {
         shares_per_minute: f32,
         coinbase_reward_script: CoinbaseRewardScript,
         locking_key_bytes: Option<Vec<u8>>,
-        min_individual_miner_hashrate: f32,
     ) -> PoolResult<Arc<Mutex<Self>>> {
         // Handle the SV2 SetupConnection message exchange.
         let setup_connection = Arc::new(Mutex::new(SetupConnectionHandler::new()));
@@ -344,7 +326,6 @@ impl Downstream {
             last_new_prev_hash,
             coinbase_reward_script,
             pool_tag_string: pool_tag,
-            min_individual_miner_hashrate,
             locking_key_bytes,
         }));
 
@@ -608,7 +589,6 @@ impl Pool {
         let solution_sender = self_.safe_lock(|p| p.solution_sender.clone())?;
         let status_tx = self_.safe_lock(|s| s.status_tx.clone())?;
         let locking_key_bytes = self_.safe_lock(|p| p.locking_key_bytes.clone())?;
-        let min_individual_miner_hashrate = self_.safe_lock(|p| p.min_individual_miner_hashrate)?;
 
         // Create the Downstream instance
         let downstream = Downstream::new(
@@ -622,7 +602,6 @@ impl Pool {
             shares_per_minute,
             coinbase_reward_script,
             locking_key_bytes,
-            min_individual_miner_hashrate,
         )
         .await?;
 
@@ -1184,16 +1163,6 @@ impl Pool {
             warn!("⚠️  locking_pubkey is NOT set in config - quotes will NOT be attributed to miners!");
         }
 
-        let minimum_difficulty_bits = config.minimum_difficulty().unwrap_or(32);
-        let derived_min_hashrate =
-            derive_min_hashrate_from_difficulty(minimum_difficulty_bits, shares_per_minute);
-
-        info!(
-            "Downstream minimum difficulty: {} bits ⇒ min_hashrate ≈ {:.3} GH/s",
-            minimum_difficulty_bits,
-            derived_min_hashrate as f64 / 1_000_000_000.0
-        );
-
         let pool = Arc::new(Mutex::new(Pool {
             downstreams: HashMap::with_hasher(BuildNoHashHasher::default()),
             solution_sender,
@@ -1216,7 +1185,6 @@ impl Pool {
             mint_hub: mint_hub.clone(),
             mint_connection: None, // Phase 2: Will be established when mint service connects
             locking_key_bytes,
-            min_individual_miner_hashrate: derived_min_hashrate,
             jd_server_address: config.jd_server_address().map(|s| s.to_string()),
             stats_registry: pool_stats::PoolStatsRegistry::new(),
         }));

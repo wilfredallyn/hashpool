@@ -45,7 +45,7 @@ aggregate_channels = true  # true: shared channel, false: individual channels
 
 # Downstream Difficulty Configuration
 [downstream_difficulty_config]
-# min_individual_miner_hashrate is derived automatically from the shared minimum difficulty
+min_individual_miner_hashrate = 10_000_000_000_000.0  # 10 TH/s
 shares_per_minute = 6.0
 enable_vardiff = true  # Set to false when using with Job Declarator Client (JDC)
 
@@ -78,8 +78,7 @@ authority_pubkey = "9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72"
 - `user_identity`: Username for pool authentication (auto-suffixed per miner)
 
 #### **Difficulty Configuration**
-- `min_individual_miner_hashrate`: Derived automatically from the shared `minimum_difficulty`
-  value to keep downstream targets above the mint's ehash threshold
+- `min_individual_miner_hashrate`: Expected hashrate of weakest miner (in H/s)
 - `shares_per_minute`: Target share submission rate
 - `enable_vardiff`: Enable/disable variable difficulty adjustment (set to false when using with JDC)
   - When `true`: Translator manages difficulty adjustments based on share submission rates
@@ -146,7 +145,7 @@ user_identity = "miner_farm_1"
 aggregate_channels = true
 
 [downstream_difficulty_config]
-# min_individual_miner_hashrate is derived automatically from shared minimum difficulty
+min_individual_miner_hashrate = 10_000_000_000_000.0
 shares_per_minute = 6.0
 enable_vardiff = true
 
@@ -166,7 +165,7 @@ user_identity = "production_farm"
 aggregate_channels = true
 
 [downstream_difficulty_config]
-# min_individual_miner_hashrate is derived automatically from shared minimum difficulty
+min_individual_miner_hashrate = 50_000_000_000_000.0  # 50 TH/s
 shares_per_minute = 10.0
 enable_vardiff = true
 

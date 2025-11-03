@@ -45,9 +45,7 @@ use crate::{
     server::{
         error::ExtendedChannelError,
         jobs::{extended::ExtendedJob, factory::JobFactory, job_store::JobStore, JobOrigin},
-        share_accounting::{
-            AcceptedShare, ShareAccounting, ShareValidationError, ShareValidationResult,
-        },
+        share_accounting::{AcceptedShare, ShareAccounting, ShareValidationError, ShareValidationResult},
     },
     target::{bytes_to_hex, hash_rate_to_target, target_to_difficulty, u256_to_block_hash},
 };

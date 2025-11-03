@@ -4,12 +4,9 @@
 //! and the `from_args` function to parse them from the command line.
 use clap::Parser;
 use ext_config::{Config, File, FileFormat};
-use shared_config::MinerGlobalConfig;
 use std::path::PathBuf;
 use tracing::error;
 use translator_sv2::{config::TranslatorConfig, error::TproxyError};
-
-const DEFAULT_MINIMUM_DIFFICULTY: u32 = 32;
 
 /// Holds the parsed CLI arguments.
 #[derive(Parser, Debug)]
@@ -54,63 +51,6 @@ pub fn process_cli_args() -> Result<TranslatorConfig, TproxyError> {
 
     // Deserialize settings into TranslatorConfig
     let mut config = settings.try_deserialize::<TranslatorConfig>()?;
-
-    let mut minimum_difficulty = DEFAULT_MINIMUM_DIFFICULTY;
-    let mut source: Option<String> = None;
-
-    if let Some(global_config_path) = args.global_config_path.as_ref() {
-        let global_config_str = global_config_path.to_str().ok_or_else(|| {
-            error!("Invalid global configuration path.");
-            TproxyError::BadCliArgs
-        })?;
-
-        match MinerGlobalConfig::from_path(global_config_str) {
-            Ok(global) => {
-                // Fill in mint configuration from shared config when missing locally
-                if config.mint.is_none() {
-                    config.mint = Some(global.mint.clone());
-                    eprintln!(
-                        "✅ Loaded mint config from shared config: {}",
-                        global.mint.url
-                    );
-                }
-
-                if let Some(ehash) = global.ehash {
-                    minimum_difficulty = ehash.minimum_difficulty;
-                } else {
-                    eprintln!(
-                        "Warning: no [ehash] section found in shared config {}; falling back to default difficulty {}",
-                        global_config_str, DEFAULT_MINIMUM_DIFFICULTY
-                    );
-                }
-
-                source = Some(global_config_str.to_string());
-            }
-            Err(err) => {
-                eprintln!(
-                    "Warning: failed to parse shared global config {} ({}); using default difficulty {}",
-                    global_config_str, err, DEFAULT_MINIMUM_DIFFICULTY
-                );
-                source = Some(global_config_str.to_string());
-            }
-        }
-    }
-
-    config
-        .downstream_difficulty_config
-        .set_min_hashrate_from_difficulty(minimum_difficulty);
-
-    if let Some(source_path) = source {
-        eprintln!(
-            "Derived min_individual_miner_hashrate from {} using minimum_difficulty = {}",
-            source_path, minimum_difficulty
-        );
-    } else {
-        eprintln!(
-            "Using default minimum_difficulty = {} to derive min_individual_miner_hashrate",
-            minimum_difficulty
-        );
-    }
 
     config.set_log_dir(args.log_file);
 

@@ -154,18 +154,13 @@ impl TranslatorConfig {
 /// Configuration settings for managing difficulty adjustments on the downstream connection.
 #[derive(Debug, Deserialize, Clone)]
 pub struct DownstreamDifficultyConfig {
-    /// Minimum expected hashrate for an individual downstream miner. Always computed from the
-    /// shared minimum difficulty to guarantee submitted shares earn HASH.
-    #[serde(skip)]
+    /// The minimum hashrate expected from an individual miner on the downstream connection.
     pub min_individual_miner_hashrate: f32,
     /// The target number of shares per minute for difficulty adjustment.
     pub shares_per_minute: f32,
     /// Whether to enable variable difficulty adjustment mechanism.
     /// If false, difficulty will be managed by upstream (useful with JDC).
     pub enable_vardiff: bool,
-    /// Cached minimum difficulty (in "bits") used to derive `min_individual_miner_hashrate`.
-    #[serde(skip)]
-    minimum_difficulty_bits: u32,
 }
 
 impl DownstreamDifficultyConfig {
@@ -179,32 +174,7 @@ impl DownstreamDifficultyConfig {
             min_individual_miner_hashrate,
             shares_per_minute,
             enable_vardiff,
-            minimum_difficulty_bits: 0,
         }
-    }
-
-    /// Update `min_individual_miner_hashrate` so that proxy difficulty matches the mint's
-    /// minimum ehash requirement.
-    pub fn set_min_hashrate_from_difficulty(&mut self, minimum_difficulty: u32) {
-        // Avoid division by zero if misconfigured.
-        let shares_per_minute = if self.shares_per_minute <= f32::EPSILON {
-            1.0
-        } else {
-            self.shares_per_minute
-        } as f64;
-        let time_between_shares = 60.0f64 / shares_per_minute;
-        // Derive the hashrate required to achieve the requested minimum difficulty while still
-        // meeting the configured share cadence.
-        let target_hashes = 2_f64.powi(minimum_difficulty as i32);
-        let hashrate = target_hashes / time_between_shares;
-
-        self.min_individual_miner_hashrate = hashrate as f32;
-        self.minimum_difficulty_bits = minimum_difficulty;
-    }
-
-    /// Returns the cached minimum difficulty used for the current configuration.
-    pub fn minimum_difficulty_bits(&self) -> u32 {
-        self.minimum_difficulty_bits
     }
 }
 
@@ -221,9 +191,7 @@ mod tests {
     }
 
     fn create_test_difficulty_config() -> DownstreamDifficultyConfig {
-        let mut config = DownstreamDifficultyConfig::new(100.0, 5.0, true);
-        config.set_min_hashrate_from_difficulty(32);
-        config
+        DownstreamDifficultyConfig::new(100.0, 5.0, true)
     }
 
     #[test]
@@ -236,10 +204,9 @@ mod tests {
     #[test]
     fn test_downstream_difficulty_config_creation() {
         let config = create_test_difficulty_config();
-        assert!(config.min_individual_miner_hashrate > 0.0);
+        assert_eq!(config.min_individual_miner_hashrate, 100.0);
         assert_eq!(config.shares_per_minute, 5.0);
         assert!(config.enable_vardiff);
-        assert_eq!(config.minimum_difficulty_bits(), 32);
     }
 
     #[test]
