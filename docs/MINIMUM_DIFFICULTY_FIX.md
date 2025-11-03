@@ -325,3 +325,62 @@ For existing deployments, this is **backward compatible**:
 2. **Channel layer** - Controls channel creation with separate min_downstream_hashrate (pool concern)
 
 Result: CPU miner protection remains, but high-speed miners work correctly and hashrate metrics are accurate.
+
+---
+
+## Implementation Analysis: Issues Encountered (Nov 2025)
+
+**STATUS: Implementation in progress - codebase currently not working**
+
+During implementation of this plan, Phase 3 (removing the bad derivation) exposed fundamental problems with the translator's SV1 protocol implementation that we do not yet understand or have solved.
+
+### Phase 1 & 2 - Implemented
+- Share validation checks added to translator and pool
+- Pool config for min_downstream_hashrate added
+- No issues preventing implementation
+
+### Phase 3 - Removal of Bad Derivation - **Codebase broke, root cause unclear**
+
+Changed translator args.rs to call `set_minimum_difficulty()` instead of `set_min_hashrate_from_difficulty()`:
+```rust
+config.downstream_difficulty_config.set_minimum_difficulty(minimum_difficulty);
+```
+
+This change compiled but caused mining device failures. Multiple cascading errors encountered:
+
+**Error Sequence:**
+1. **Initial error**: Mining device received invalid difficulty `0.00000000023282709...` and panicked
+   - Traced to using wrong target variable in set_difficulty building
+   - Fixed to use `initial_target` from message instead of function parameter
+
+2. **After fix**: Mining device still fails on startup
+   - Initial error was extranonce1 panic at client.rs:368
+   - Various attempts to fix message timing, caching, and state management
+   - Multiple revisions to OpenExtendedMiningChannelSuccess handler with no success
+
+**Observed Problems (unsolved):**
+- Translator sends extranonce1 but mining device doesn't receive it properly before notify
+- Message ordering between set_difficulty and notify is unclear
+- sv1_handshake_complete flag needs to be set at some point but unclear when
+- Queued message processing during channel open interacts with message handling in complex ways
+- Mining device intermittently connects then immediately disconnects
+
+**Current hypothesis (unconfirmed):**
+The translator bridges Stratum V1 (synchronous, ordered protocol with subscribe-response containing extranonce1) with SV2 (asynchronous, unordered messages). The SV2 channel open (OpenExtendedMiningChannelSuccess) arrives asynchronously, potentially after subscribe/authorize messages have already been queued. Reconciling when extranonce1 becomes available with when the SV1 client needs it for the notify message appears to involve intricate state management that we have not successfully implemented.
+
+**What we tried:**
+- Manually sending set_difficulty messages from channel open handler
+- Caching mining.notify until handshake complete
+- Setting sv1_handshake_complete flag at various points
+- Processing queued messages synchronously
+- Ensuring trait method set_extranonce1() is called instead of direct field assignment
+- Multiple variable name corrections and target tracking fixes
+
+**Result:** Codebase compiles but miners still cannot connect/receive proper mining work.
+
+**Open questions:**
+- What is the correct sequence of operations when OpenExtendedMiningChannelSuccess arrives?
+- When exactly should extranonce1 be available to mining device?
+- How should queued subscribe/authorize responses interact with asynchronously-received set_difficulty and notify?
+- Is manual message coordination needed, or should the natural message flow handle it?
+- Does the SV1 library's state machine require specific method calls in specific order?
