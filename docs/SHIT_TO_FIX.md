@@ -85,6 +85,44 @@ The mint service connects to the pool using `PlainConnection` which:
 
 ## Medium Priority
 
+### Shared Config Sections Leaking Service Connection Details
+
+**Status:** Confusing architectural design + inconsistent parsing
+**Priority:** Medium - Clean up config organization
+
+**Current Problem:**
+1. **Conceptual confusion:** Shared configs contain sections that exist purely for cross-service connections (e.g., `[mint]`, `[pool]`, `[proxy]` in miner.toml that only translator reads). These aren't truly "shared".
+2. **Inconsistent parsing:** Roles parse shared configs differently:
+   - `pool` and `mint` use `PoolGlobalConfig` struct (type-safe)
+   - `web-pool` reads `config/shared/pool.toml` directly via toml parsing (manual extraction)
+   - `stats-proxy` and `web-proxy` read `config/shared/miner.toml` directly via toml parsing (manual extraction)
+
+**What Needs To Happen:**
+1. Rename `config/shared/miner.toml` → `config/shared/proxy.toml` (clearer intent)
+2. Rename translator config files: `tproxy.config.toml` → `proxy.config.toml` (both dev and prod)
+3. Create `ProxyGlobalConfig` struct in `roles/roles-utils/config/src/lib.rs` (parallel to `PoolGlobalConfig`)
+4. Update all miner-side roles to use `ProxyGlobalConfig` instead of manual toml parsing:
+   - `stats-proxy`: load via `ProxyGlobalConfig::from_path()`
+   - `web-proxy`: load via `ProxyGlobalConfig::from_path()`
+5. Update `pool`-side `web-pool` to use `PoolGlobalConfig` instead of manual toml parsing
+6. Update systemd services and deployment docs to use new filenames
+
+**Files to Rename:**
+- `config/shared/miner.toml` → `config/shared/proxy.toml`
+- `config/tproxy.config.toml` → `config/proxy.config.toml`
+- `config/prod/tproxy.config.toml` → `config/prod/proxy.config.toml`
+- Update `roles/translator/src/args.rs` default value from `proxy-config.toml`
+
+**Current Code Locations (need refactoring):**
+- `roles/roles-utils/config/src/lib.rs:100` - Add `ProxyGlobalConfig` struct here
+- `roles/stats-proxy/src/config.rs` - Replace manual toml parsing with struct
+- `roles/web-proxy/src/config.rs` - Replace manual toml parsing with struct
+- `roles/web-pool/src/config.rs` - Replace manual toml parsing with `PoolGlobalConfig`
+- `roles/translator/src/args.rs` - Update default config filename
+- Systemd services that reference `tproxy.config.toml`
+
+---
+
 ### Web-Proxy Tightly Coupled To Translator Proxy Config
 
 **Status:** Working but architecturally problematic
@@ -229,6 +267,86 @@ Follow-up: After the hub owns pending state, the poller can just iterate `hub.pe
 ---
 
 ## Low Priority
+
+### Production Logging Not Working For Several Services
+
+**Status:** Empty log files in /var/log/hashpool/ (0 bytes)
+**Priority:** High - Cannot debug production issues without logs
+
+**Current Problem:**
+Several services are running but not logging to files in production:
+- `mint.log` - 0 bytes (empty)
+- `stats-pool.log` - 0 bytes (empty)
+- `stats-proxy.log` - 0 bytes (empty)
+- `web-pool.log` - 0 bytes (empty)
+- `web-proxy.log` - 0 bytes (empty)
+
+While others work fine:
+- `bitcoind.log` - 3.2 MB (working)
+- `pool.log` - 19.8 MB (working)
+- `proxy.log` - 156 MB (working)
+- `jd-client.log` - 7.9 MB (working)
+- `jd-server.log` - 644 KB (working)
+
+**Root Cause:**
+Services like mint, stats-pool, stats-proxy, web-pool, and web-proxy use different logging mechanisms or don't support the `-f` flag that was added to systemd service definitions. They're probably logging to stdout/stderr which is being discarded.
+
+**What Needs To Happen:**
+1. Investigate why mint, stats-pool, stats-proxy, web-pool, and web-proxy aren't writing logs
+2. Check if these services support the `-f` log file flag (they may use different logging libraries)
+3. Either:
+   a. Add proper logging flag support to these services, OR
+   b. Configure systemd to capture stdout/stderr to files (StandardOutput=file:/var/log/hashpool/service.log), OR
+   c. Implement proper logging in the code (e.g., via tracing crate like translator/pool use)
+4. Verify all services log properly after fix
+5. Consider implementing log rotation (logrotate) since proxy.log is already 156 MB
+
+**Affected Services:**
+- `roles/mint` - Logger implementation check needed
+- `roles/stats-pool` - Logger implementation check needed
+- `roles/stats-proxy` - Logger implementation check needed
+- `roles/web-pool` - Logger implementation check needed
+- `roles/web-proxy` - Logger implementation check needed
+
+**Systemd Service Files to Update:**
+- `scripts/systemd/hashpool-mint.service`
+- `scripts/systemd/hashpool-stats-pool.service`
+- `scripts/systemd/hashpool-stats-proxy.service`
+- `scripts/systemd/hashpool-web-pool.service`
+- `scripts/systemd/hashpool-web-proxy.service`
+
+---
+
+### Systemd Service Environment Configuration Scattered
+
+**Status:** Works but repetitive
+**Priority:** Low - Operational convenience
+
+**Current Problem:**
+Environment variables like `BITCOIND_NETWORK=testnet4` and `RUST_LOG=info` are hardcoded in each systemd service file, duplicated across multiple services. Makes it hard to change globally (e.g., switching from testnet4 to mainnet).
+
+**What Needs To Happen:**
+1. Create `/etc/hashpool/hashpool.env` with centralized environment variables:
+```ini
+BITCOIND_NETWORK=testnet4
+RUST_LOG=info
+```
+
+2. Update all systemd services to source this file:
+```ini
+EnvironmentFile=/etc/hashpool/hashpool.env
+```
+
+3. Remove duplicate `Environment=` directives from individual service files
+
+**Services affected:**
+- hashpool-pool.service
+- hashpool-proxy.service
+- (any others that add common env vars)
+
+**Benefit:** Single point to change network/log level across all services
+
+---
 
 ### Stats Service Connection Identity
 

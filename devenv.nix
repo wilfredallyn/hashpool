@@ -241,7 +241,7 @@ in {
         ${waitForPort statsProxyTcpPort "Stats-Proxy"}
         cd ${config.devenv.root} && cargo -C roles/web-proxy -Z unstable-options run -- \
           --web-proxy-config ${config.devenv.root}/config/web-proxy.config.toml \
-          --config ${config.devenv.root}/config/tproxy.config.toml \
+          --config ${config.devenv.root}/config/shared/miner.toml \
           --shared-config ${config.devenv.root}/config/shared/miner.toml
       '' "web_proxy.log";
     };

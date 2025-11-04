@@ -8,16 +8,14 @@ Type=simple
 User=hashpool
 Group=hashpool
 WorkingDirectory=/opt/hashpool
+ExecStartPre=+/bin/sh -c 'mkdir -p /var/log/hashpool && touch /var/log/hashpool/web-proxy.log && chown hashpool:hashpool /var/log/hashpool /var/log/hashpool/web-proxy.log && chmod 755 /var/log/hashpool && chmod 644 /var/log/hashpool/web-proxy.log'
 ExecStart=/opt/hashpool/bin/web_proxy \
-  --stats-proxy-url http://127.0.0.1:8084 \
-  --web-address 127.0.0.1:3000 \
-  --config /opt/hashpool/config/tproxy.config.toml \
-  --shared-config /opt/hashpool/config/shared/miner.toml
+  --web-proxy-config /opt/hashpool/config/web-proxy.config.toml \
+  --config /opt/hashpool/config/shared/miner.toml \
+  --shared-config /opt/hashpool/config/shared/miner.toml \
+  -f /var/log/hashpool/web-proxy.log
 Restart=always
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=hashpool-web-proxy
 
 [Install]
 WantedBy=multi-user.target

@@ -9,6 +9,9 @@ tcp_listen_address = "127.0.0.1:9083"
 http_listen_address = "127.0.0.1:9084"
 
 [snapshot_storage]
+# Database path for persistent storage (optional)
+db_path = "/var/lib/hashpool/stats-pool/stats.sqlite"
+
 # Threshold in seconds for marking data as stale in /health endpoint
 # Used by monitoring systems to detect if Pool stopped sending updates
 staleness_threshold_secs = 15

@@ -95,7 +95,7 @@ impl Config {
             .position(|arg| arg == "--config" || arg == "-c")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.as_str())
-            .unwrap_or("config/stats-proxy.config.toml");
+            .ok_or("Missing required argument: --config")?;
 
         let stats_proxy_config_str =
             fs::read_to_string(stats_proxy_config_path).unwrap_or_default();
@@ -141,7 +141,7 @@ impl Config {
             .position(|arg| arg == "--tproxy-config")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.as_str())
-            .unwrap_or("config/tproxy.config.toml");
+            .ok_or("Missing required argument: --tproxy-config")?;
 
         let tproxy_str = fs::read_to_string(tproxy_config_path)?;
         let tproxy: TproxyConfig = toml::from_str(&tproxy_str)?;
@@ -152,7 +152,7 @@ impl Config {
             .position(|arg| arg == "--shared-config" || arg == "-s")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.as_str())
-            .unwrap_or("config/shared/miner.toml");
+            .ok_or("Missing required argument: --shared-config")?;
 
         let shared_config_str = fs::read_to_string(shared_config_path)?;
         let shared_config: toml::Value = toml::from_str(&shared_config_str)?;

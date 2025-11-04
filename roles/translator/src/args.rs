@@ -54,21 +54,5 @@ pub fn process_cli_args() -> Result<TranslatorConfig, TproxyError> {
 
     config.set_log_dir(args.log_file);
 
-    // Load stats poll interval from global config if provided
-    if let Some(global_config_path) = args.global_config_path {
-        let global_config_str = global_config_path
-            .to_str()
-            .ok_or_else(|| TproxyError::BadCliArgs)?;
-        if let Ok(settings) = Config::builder()
-            .add_source(File::new(global_config_str, FileFormat::Toml))
-            .build()
-        {
-            // Try to extract snapshot_poll_interval_secs from [stats] section
-            if let Ok(interval) = settings.get_int("stats.snapshot_poll_interval_secs") {
-                config.set_snapshot_poll_interval_secs(interval as u64);
-            }
-        }
-    }
-
     Ok(config)
 }

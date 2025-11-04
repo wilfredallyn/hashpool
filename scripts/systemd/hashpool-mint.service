@@ -7,15 +7,15 @@ Type=simple
 User=hashpool
 Group=hashpool
 WorkingDirectory=/opt/hashpool
-Environment="CDK_MINT_DB_PATH=/opt/hashpool/.devenv/state/mint/mint.sqlite"
+Environment="CDK_MINT_DB_PATH=/var/lib/hashpool/mint/mint.sqlite"
+Environment="RUST_LOG=info"
+ExecStartPre=+/bin/sh -c 'mkdir -p /var/log/hashpool /var/lib/hashpool/mint && touch /var/log/hashpool/mint.log && chown hashpool:hashpool /var/log/hashpool /var/log/hashpool/mint.log /var/lib/hashpool && chmod 755 /var/log/hashpool /var/lib/hashpool /var/lib/hashpool/mint && chmod 644 /var/log/hashpool/mint.log'
 ExecStart=/opt/hashpool/bin/mint \
   -c /opt/hashpool/config/mint.config.toml \
-  -g /opt/hashpool/config/shared/pool.toml
+  -g /opt/hashpool/config/shared/pool.toml \
+  -f /var/log/hashpool/mint.log
 Restart=always
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=hashpool-mint
 
 [Install]
 WantedBy=multi-user.target

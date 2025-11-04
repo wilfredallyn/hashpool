@@ -84,7 +84,7 @@ impl Config {
             .position(|arg| arg == "--web-proxy-config")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.as_str())
-            .unwrap_or("config/web-proxy.config.toml");
+            .ok_or("Missing required argument: --web-proxy-config")?;
 
         let web_proxy_config_str = fs::read_to_string(web_proxy_config_path).unwrap_or_default();
         let web_proxy_config: WebProxyConfig = if web_proxy_config_str.is_empty() {
@@ -114,16 +114,49 @@ impl Config {
             .or_else(|| web_proxy_config.server.listen_address)
             .ok_or("Missing required config: server.listen_address")?;
 
-        // Load tproxy config to get downstream connection info
+        // Load shared miner config to get network topology
         let config_path = args
             .iter()
             .position(|arg| arg == "--config" || arg == "-c")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.as_str())
-            .unwrap_or("config/tproxy.config.toml");
+            .ok_or("Missing required argument: --config")?;
 
         let config_str = fs::read_to_string(config_path)?;
-        let tproxy: TproxyConfig = toml::from_str(&config_str)?;
+        let shared_network: toml::Value = toml::from_str(&config_str)?;
+
+        let upstream_address = shared_network
+            .get("network")
+            .and_then(|n| n.get("upstream_address"))
+            .and_then(|a| a.as_str())
+            .ok_or("Missing required config: network.upstream_address")?
+            .to_string();
+
+        let upstream_port = shared_network
+            .get("network")
+            .and_then(|n| n.get("upstream_port"))
+            .and_then(|p| p.as_integer())
+            .ok_or("Missing required config: network.upstream_port")? as u16;
+
+        let downstream_address = shared_network
+            .get("network")
+            .and_then(|n| n.get("downstream_address"))
+            .and_then(|a| a.as_str())
+            .ok_or("Missing required config: network.downstream_address")?
+            .to_string();
+
+        let downstream_port = shared_network
+            .get("network")
+            .and_then(|n| n.get("downstream_port"))
+            .and_then(|p| p.as_integer())
+            .ok_or("Missing required config: network.downstream_port")? as u16;
+
+        let tproxy = TproxyConfig {
+            downstream_address,
+            downstream_port,
+            upstream_address,
+            upstream_port,
+        };
 
         // Load shared miner config to get faucet configuration
         let shared_config_path = args
@@ -131,7 +164,7 @@ impl Config {
             .position(|arg| arg == "--shared-config" || arg == "-g")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.as_str())
-            .unwrap_or("config/shared/miner.toml");
+            .ok_or("Missing required argument: --shared-config")?;
 
         let shared_config_str = fs::read_to_string(shared_config_path)?;
         let shared_config: toml::Value = toml::from_str(&shared_config_str)?;

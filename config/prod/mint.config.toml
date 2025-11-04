@@ -32,5 +32,5 @@ reserve_fee_min = 2
 # max_delay_time = 3
 
 [hashpool_mint]
-db_path = ".devenv/state/mint/mint.sqlite"
+db_path = "/var/lib/hashpool/mint/mint.sqlite"
 

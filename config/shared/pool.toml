@@ -19,9 +19,6 @@ locking_pubkey = "03387b8527d7528f2e2f76899f41a0c6a87c87be83d3ff57c2dbec1a176b80
 host = "localhost"
 port = 3338
 url = "http://localhost:3338"
-# host = "mint.hashpool.dev"
-# port = 443
-# url = "https://mint.hashpool.dev"
 
 [pool]
 port = 34254
@@ -55,7 +52,8 @@ minimum_difficulty = 32
 # - Development: 5s for normal monitoring
 # - High-frequency monitoring: 1s for detailed metrics
 # - Battery-limited: 10s to reduce overhead
-snapshot_poll_interval_secs = 5
+# - Production: 15s to reduce load
+snapshot_poll_interval_secs = 15
 
 [web_pool]
 # Interval in seconds for web-pool to pull from stats-pool (seconds)

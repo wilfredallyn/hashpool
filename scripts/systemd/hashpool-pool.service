@@ -8,14 +8,15 @@ Type=simple
 User=hashpool
 Group=hashpool
 WorkingDirectory=/opt/hashpool
+Environment="BITCOIND_NETWORK=testnet4"
+Environment="RUST_LOG=info"
+ExecStartPre=+/bin/sh -c 'mkdir -p /var/log/hashpool /var/lib/hashpool/pool && touch /var/log/hashpool/pool.log && chown hashpool:hashpool /var/log/hashpool /var/log/hashpool/pool.log /var/lib/hashpool && chmod 755 /var/log/hashpool /var/lib/hashpool /var/lib/hashpool/pool && chmod 644 /var/log/hashpool/pool.log'
 ExecStart=/opt/hashpool/bin/pool_sv2 \
   -c /opt/hashpool/config/pool.config.toml \
-  -g /opt/hashpool/config/shared/pool.toml
+  -g /opt/hashpool/config/shared/pool.toml \
+  -f /var/log/hashpool/pool.log
 Restart=always
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=hashpool-pool
 
 [Install]
 WantedBy=multi-user.target

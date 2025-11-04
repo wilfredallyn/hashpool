@@ -65,8 +65,8 @@ cp "$LOCAL_DIR/roles/target/debug/web_proxy" "$STAGING_DIR/bin/"
 cp /tmp/bitcoind "$STAGING_DIR/bin/"
 cp /tmp/bitcoin-cli "$STAGING_DIR/bin/"
 
-# Stage configs
-cp -r "$LOCAL_DIR/config/prod/"* "$STAGING_DIR/config/"
+# Stage configs - copy prod configs directly to config/ directory
+cp -r "$LOCAL_DIR/config/prod"/* "$STAGING_DIR/config/"
 
 # Stage systemd services and control script
 cp "$LOCAL_DIR/scripts/systemd/"*.service "$STAGING_DIR/systemd/"
@@ -103,8 +103,8 @@ ssh "$VPS_USER@$VPS_HOST" << 'EOF'
   sleep 1
 
   # Create necessary directories
-  mkdir -p /opt/hashpool/{bin,config}
-  mkdir -p /opt/hashpool/.devenv/state/{translator,mint,stats-pool,stats-proxy,bitcoind}
+  mkdir -p /opt/hashpool/{bin,config,config/shared}
+  mkdir -p /var/lib/hashpool/{translator,mint,pool,stats-pool,stats-proxy,bitcoind/testnet4}
 
   # Move files from staging to final location
   cp -r /tmp/hashpool-deploy/bin/* /opt/hashpool/bin/

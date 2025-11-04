@@ -10,7 +10,7 @@ http_listen_address = "127.0.0.1:8084"
 
 [snapshot_storage]
 # Database path for persistent storage (optional)
-db_path = ".devenv/state/stats-proxy.db"
+db_path = "/var/lib/hashpool/stats-proxy/stats.db"
 
 # Threshold in seconds for marking data as stale in /health endpoint
 # Used by monitoring systems to detect if Translator stopped sending updates

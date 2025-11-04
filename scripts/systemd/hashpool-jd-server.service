@@ -8,13 +8,12 @@ Type=simple
 User=hashpool
 Group=hashpool
 WorkingDirectory=/opt/hashpool
+ExecStartPre=+/bin/sh -c 'mkdir -p /var/log/hashpool && touch /var/log/hashpool/jd-server.log && chown hashpool:hashpool /var/log/hashpool /var/log/hashpool/jd-server.log && chmod 755 /var/log/hashpool && chmod 644 /var/log/hashpool/jd-server.log'
 ExecStart=/opt/hashpool/bin/jd_server \
-  -c /opt/hashpool/config/jds.config.toml
+  -c /opt/hashpool/config/jds.config.toml \
+  -f /var/log/hashpool/jd-server.log
 Restart=always
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=hashpool-jd-server
 
 [Install]
 WantedBy=multi-user.target

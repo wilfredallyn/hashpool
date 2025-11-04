@@ -67,7 +67,7 @@ pub async fn setup_mint(mint_settings: config::Settings, db_path: String) -> Res
         contact: None,
         nuts,
         icon_url: None,
-        urls: None,
+        urls: Some(vec![mint_settings.info.url.clone()]),
         motd: None,
         time: None,
         tos_url: None,

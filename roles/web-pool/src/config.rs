@@ -72,7 +72,7 @@ impl Config {
             .position(|arg| arg == "--web-pool-config")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.as_str())
-            .unwrap_or("config/web-pool.config.toml");
+            .ok_or("Missing required argument: --web-pool-config")?;
 
         let web_pool_config_str = fs::read_to_string(web_pool_config_path).unwrap_or_default();
         let web_pool_config: WebPoolConfig = if web_pool_config_str.is_empty() {
@@ -108,7 +108,7 @@ impl Config {
             .position(|arg| arg == "--shared-config" || arg == "-g")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.as_str())
-            .unwrap_or("config/shared/pool.toml");
+            .ok_or("Missing required argument: --shared-config")?;
 
         let shared_config_str = fs::read_to_string(shared_config_path)?;
         let shared_config: toml::Value = toml::from_str(&shared_config_str)?;

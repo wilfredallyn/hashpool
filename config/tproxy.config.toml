@@ -32,9 +32,9 @@ redact_ip = false
 faucet_port = 8083
 faucet_timeout = 3
 
-# Primary upstream pool server (for web-proxy connection display)
-upstream_address = "127.0.0.1"
-upstream_port = 34254
+# Stats polling interval (seconds)
+[stats]
+snapshot_poll_interval_secs = 5
 
 # List of upstream pool servers (with fallback support)
 [[upstreams]]
@@ -71,5 +71,5 @@ url = "http://localhost:3338"
 
 [wallet]
 mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-db_path = ".devenv/state/translator/wallet.sqlite"
+db_path = "/opt/hashpool/.devenv/state/translator/wallet.sqlite"
 locking_privkey = "e1c193b1a2681f01a10731f317c754a031ed9e61aaaf702b5083e55a2c0a8fff"

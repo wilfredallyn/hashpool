@@ -25,6 +25,10 @@ aggregate_channels = false
 # Stats server config (TCP address for stats-proxy)
 stats_server_address = "127.0.0.1:8082"
 
+# Stats polling interval (seconds)
+[stats]
+snapshot_poll_interval_secs = 15
+
 # Redact miner IP addresses from database and website (prod)
 redact_ip = true
 
@@ -52,8 +56,8 @@ authority_pubkey = "9auqWEzQDVyd2oe1JVGFLMLHZtCo2FFqZwtKA5gd9xbuEu7PH72"
 
 # Difficulty params
 [downstream_difficulty_config]
-# Minimum hashrate is derived automatically from shared minimum_difficulty to prevent
-# downstream targets from dropping below the mint's ehash threshold.
+# minimum hashrate expected from an individual miner on the downstream connection (in Hz)
+min_individual_miner_hashrate = 1000.0
 # target number of shares per minute the miner should be sending
 shares_per_minute = 6.0
 # enable variable difficulty adjustment mechanism
@@ -66,7 +70,10 @@ channel_diff_update_interval = 60
 # estimated accumulated hashrate of all downstream miners (e.g.: 10 Th/s = 10_000_000_000_000.0)
 channel_nominal_hashrate = 10_000_000.0
 
+[mint]
+url = "https://mint.hashpool.dev"
+
 [wallet]
 mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
-db_path = ".devenv/state/translator/wallet.sqlite"
+db_path = "/var/lib/hashpool/translator/wallet.sqlite"
 locking_privkey = "e1c193b1a2681f01a10731f317c754a031ed9e61aaaf702b5083e55a2c0a8fff"

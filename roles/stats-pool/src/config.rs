@@ -74,7 +74,7 @@ impl Config {
             .position(|arg| arg == "--config" || arg == "-c")
             .and_then(|i| args.get(i + 1))
             .map(|s| s.as_str())
-            .unwrap_or("config/stats-pool.config.toml");
+            .ok_or("Missing required argument: --config")?;
 
         let stats_pool_config_str = fs::read_to_string(stats_pool_config_path).unwrap_or_default();
         let stats_pool_config: StatsPoolConfig = if stats_pool_config_str.is_empty() {
