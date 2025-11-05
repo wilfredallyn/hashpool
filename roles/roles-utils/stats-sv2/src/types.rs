@@ -25,11 +25,14 @@ pub struct DownstreamSnapshot {
     /// Lifetime total shares accepted for this downstream
     pub shares_lifetime: u64,
 
-    /// Shares accepted in the current 10-second window
+    /// Shares accepted in the current measurement window
     pub shares_in_window: u64,
 
     /// Sum of difficulties for shares in current window
     pub sum_difficulty_in_window: f64,
+
+    /// Size of the measurement window in seconds
+    pub window_seconds: u64,
 
     /// Unix timestamp when this snapshot was captured
     pub timestamp: u64,
@@ -79,6 +82,7 @@ mod tests {
             shares_lifetime: 100,
             shares_in_window: 5,
             sum_difficulty_in_window: 100.5,
+            window_seconds: 60,
             timestamp: unix_timestamp(),
         };
 

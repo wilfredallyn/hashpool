@@ -106,6 +106,7 @@ impl Pool {
                         shares_lifetime: stats.shares_submitted.load(std::sync::atomic::Ordering::Relaxed),
                         shares_in_window: stats.shares_in_window(),
                         sum_difficulty_in_window: stats.sum_difficulty_in_window(),
+                        window_seconds: stats.window_seconds(),
                         timestamp: unix_timestamp(),
                     });
                 }

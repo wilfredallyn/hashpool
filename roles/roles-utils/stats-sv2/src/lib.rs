@@ -19,17 +19,19 @@ mod tests {
 
     #[test]
     fn test_hashrate_calculation() {
-        // Test basic hashrate calculation: 1000 difficulty / 10 seconds = 100 h/s
+        // Test basic hashrate calculation: (1000 * 2^32) / 10 seconds
         let hashrate = derive_hashrate(1000.0, 10);
-        assert_eq!(hashrate, 100.0);
+        assert_eq!(hashrate, 429_496_729_600.0);
 
         // Test zero difficulty
         let hashrate = derive_hashrate(0.0, 10);
         assert_eq!(hashrate, 0.0);
 
         // Test large difficulty (typical mining)
+        // (1_000_000_000_000 * 2^32) / 10
         let hashrate = derive_hashrate(1_000_000_000_000.0, 10);
-        assert_eq!(hashrate, 100_000_000_000.0); // 100 GH/s
+        let expected = (1_000_000_000_000.0 * 4_294_967_296.0) / 10.0;
+        assert_eq!(hashrate, expected);
     }
 
 }

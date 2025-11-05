@@ -16,7 +16,7 @@ pub struct MinerInfo {
     pub last_share_time: Option<Instant>,
     pub estimated_hashrate: f64, // H/s
 
-    // Shared windowed metrics collector (10-second window)
+    // Shared windowed metrics collector (60-second / 1-minute window)
     pub metrics_collector: WindowedMetricsCollector,
 }
 
@@ -66,7 +66,7 @@ impl MinerTracker {
             shares_submitted: 0,
             last_share_time: None,
             estimated_hashrate: 0.0,
-            metrics_collector: WindowedMetricsCollector::new(10), // 10-second window
+            metrics_collector: WindowedMetricsCollector::new(60), // 60-second (1-minute) window
         };
 
         self.miners.write().await.insert(id, miner);

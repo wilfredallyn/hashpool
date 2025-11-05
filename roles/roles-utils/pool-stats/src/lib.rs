@@ -42,7 +42,7 @@ impl DownstreamStats {
             quotes_created: AtomicU64::new(0),
             ehash_mined: AtomicU64::new(0),
             last_share_at: AtomicU64::new(0),
-            metrics_collector: RwLock::new(WindowedMetricsCollector::new(10)), // 10-second window
+            metrics_collector: RwLock::new(WindowedMetricsCollector::new(60)), // 60-second (1-minute) window
         }
     }
 
@@ -65,7 +65,7 @@ impl DownstreamStats {
         collector.record_share(difficulty);
     }
 
-    /// Get the sum of difficulties in the current window (10 seconds).
+    /// Get the sum of difficulties in the current window (60 seconds).
     pub fn sum_difficulty_in_window(&self) -> f64 {
         let collector = self.metrics_collector.read();
         collector.sum_difficulty_in_window()
@@ -75,6 +75,12 @@ impl DownstreamStats {
     pub fn shares_in_window(&self) -> u64 {
         let collector = self.metrics_collector.read();
         collector.shares_in_window()
+    }
+
+    /// Get the window size in seconds.
+    pub fn window_seconds(&self) -> u64 {
+        let collector = self.metrics_collector.read();
+        collector.window_seconds()
     }
 }
 

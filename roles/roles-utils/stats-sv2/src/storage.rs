@@ -99,6 +99,7 @@ impl SqliteStorage {
                 shares_in_window INTEGER NOT NULL,
                 sum_difficulty REAL NOT NULL,
                 shares_lifetime INTEGER NOT NULL,
+                window_seconds INTEGER NOT NULL,
 
                 PRIMARY KEY (timestamp, downstream_id),
                 FOREIGN KEY (downstream_id) REFERENCES downstreams(downstream_id)
@@ -149,6 +150,27 @@ impl SqliteStorage {
 
         Ok(())
     }
+
+    /// Convert raw query rows to HashratePoint with bucketed aggregation.
+    fn aggregate_rows_to_hashrate_points(rows: Vec<sqlx::sqlite::SqliteRow>) -> Vec<HashratePoint> {
+        rows.iter()
+            .map(|row| {
+                let bucket_timestamp = row.get::<i64, _>("bucket_timestamp") as u64;
+                let total_difficulty = row.get::<f64, _>("total_difficulty");
+                let sample_count = row.get::<i64, _>("sample_count") as u64;
+                let window_seconds = row.get::<i64, _>("window_seconds") as u64;
+
+                // Calculate average hashrate across samples
+                // Average the difficulty first, then derive hashrate
+                let avg_difficulty = total_difficulty / sample_count as f64;
+
+                HashratePoint {
+                    timestamp: bucket_timestamp,
+                    hashrate_hs: crate::metrics::derive_hashrate(avg_difficulty, window_seconds),
+                }
+            })
+            .collect()
+    }
 }
 
 #[async_trait::async_trait]
@@ -161,8 +183,8 @@ impl StatsStorage for SqliteStorage {
         sqlx::query(
             r#"
             INSERT INTO hashrate_samples
-            (timestamp, downstream_id, shares_in_window, sum_difficulty, shares_lifetime)
-            VALUES (?, ?, ?, ?, ?)
+            (timestamp, downstream_id, shares_in_window, sum_difficulty, shares_lifetime, window_seconds)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#,
         )
         .bind(downstream.timestamp as i64)
@@ -170,6 +192,7 @@ impl StatsStorage for SqliteStorage {
         .bind(downstream.shares_in_window as i64)
         .bind(downstream.sum_difficulty_in_window)
         .bind(downstream.shares_lifetime as i64)
+        .bind(downstream.window_seconds as i64)
         .execute(&self.pool)
         .await?;
 
@@ -182,12 +205,18 @@ impl StatsStorage for SqliteStorage {
         from_timestamp: u64,
         to_timestamp: u64,
     ) -> Result<Vec<HashratePoint>> {
+        // Aggregate data into 60-second buckets to smooth the graph
         let rows = sqlx::query(
             r#"
-            SELECT timestamp, shares_in_window, CAST(sum_difficulty AS REAL) as sum_difficulty
+            SELECT
+                (timestamp / 60) * 60 as bucket_timestamp,
+                SUM(CAST(sum_difficulty AS REAL)) as total_difficulty,
+                COUNT(*) as sample_count,
+                MAX(window_seconds) as window_seconds
             FROM hashrate_samples
             WHERE downstream_id = ? AND timestamp >= ? AND timestamp <= ?
-            ORDER BY timestamp ASC
+            GROUP BY bucket_timestamp
+            ORDER BY bucket_timestamp ASC
             "#,
         )
         .bind(downstream_id as i32)
@@ -196,16 +225,7 @@ impl StatsStorage for SqliteStorage {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows
-            .iter()
-            .map(|row| HashratePoint {
-                timestamp: row.get::<i64, _>("timestamp") as u64,
-                hashrate_hs: crate::metrics::derive_hashrate(
-                    row.get::<f64, _>("sum_difficulty"),
-                    10, // 10-second window
-                ),
-            })
-            .collect())
+        Ok(Self::aggregate_rows_to_hashrate_points(rows))
     }
 
     async fn query_aggregate_hashrate(
@@ -213,14 +233,18 @@ impl StatsStorage for SqliteStorage {
         from_timestamp: u64,
         to_timestamp: u64,
     ) -> Result<Vec<HashratePoint>> {
+        // Aggregate data into 60-second buckets to smooth the graph
         let rows = sqlx::query(
             r#"
-            SELECT timestamp, SUM(shares_in_window) as total_shares,
-                   SUM(CAST(sum_difficulty AS REAL)) as total_difficulty
+            SELECT
+                (timestamp / 60) * 60 as bucket_timestamp,
+                SUM(CAST(sum_difficulty AS REAL)) as total_difficulty,
+                COUNT(*) as sample_count,
+                MAX(window_seconds) as window_seconds
             FROM hashrate_samples
             WHERE timestamp >= ? AND timestamp <= ?
-            GROUP BY timestamp
-            ORDER BY timestamp ASC
+            GROUP BY bucket_timestamp
+            ORDER BY bucket_timestamp ASC
             "#,
         )
         .bind(from_timestamp as i64)
@@ -228,16 +252,7 @@ impl StatsStorage for SqliteStorage {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows
-            .iter()
-            .map(|row| HashratePoint {
-                timestamp: row.get::<i64, _>("timestamp") as u64,
-                hashrate_hs: crate::metrics::derive_hashrate(
-                    row.get::<f64, _>("total_difficulty"),
-                    10, // 10-second window
-                ),
-            })
-            .collect())
+        Ok(Self::aggregate_rows_to_hashrate_points(rows))
     }
 }
 
@@ -271,6 +286,7 @@ mod tests {
 
         let storage = SqliteStorage::new(&db_path).await.unwrap();
 
+        // Use timestamp 6000 (divides evenly into 60-second buckets)
         let downstream = DownstreamSnapshot {
             downstream_id: 1,
             name: "test_miner".to_string(),
@@ -278,16 +294,18 @@ mod tests {
             shares_lifetime: 100,
             shares_in_window: 10,
             sum_difficulty_in_window: 100.0,
-            timestamp: 1000,
+            window_seconds: 10,
+            timestamp: 6000,
         };
 
         storage.store_downstream(&downstream).await.unwrap();
 
-        let results = storage.query_hashrate(1, 0, 2000).await.unwrap();
+        let results = storage.query_hashrate(1, 0, 7000).await.unwrap();
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].timestamp, 1000);
-        // 100 difficulty / 10 seconds = 10 H/s
-        assert_eq!(results[0].hashrate_hs, 10.0);
+        // 6000 / 60 * 60 = 6000 (even bucket boundary)
+        assert_eq!(results[0].timestamp, 6000);
+        // (100 * 2^32) / 10 seconds = 42,949,672,960 H/s
+        assert_eq!(results[0].hashrate_hs, 42_949_672_960.0);
     }
 
     #[tokio::test]
@@ -297,8 +315,9 @@ mod tests {
 
         let storage = SqliteStorage::new(&db_path).await.unwrap();
 
-        // Store samples at 10-second intervals
-        for i in 0..5 {
+        // Store samples at 10-second intervals within a 60-second bucket
+        // Use 6000 as base (divisible by 60)
+        for i in 0..6 {
             let downstream = DownstreamSnapshot {
                 downstream_id: 1,
                 name: "miner_1".to_string(),
@@ -306,21 +325,20 @@ mod tests {
                 shares_lifetime: (i + 1) * 10,
                 shares_in_window: 10,
                 sum_difficulty_in_window: 1000.0,
-                timestamp: 1000 + (i as u64 * 10),
+                window_seconds: 10,
+                timestamp: 6000 + (i as u64 * 10),
             };
             storage.store_downstream(&downstream).await.unwrap();
         }
 
-        // Query all samples
-        let results = storage.query_hashrate(1, 1000, 1050).await.unwrap();
-        assert_eq!(results.len(), 5);
-
-        // Verify they're in order
-        for i in 0..5 {
-            assert_eq!(results[i].timestamp, 1000 + (i as u64 * 10));
-            // 1000 difficulty / 10 seconds = 100 H/s
-            assert_eq!(results[i].hashrate_hs, 100.0);
-        }
+        // Query samples - should be aggregated into 60-second bucket
+        let results = storage.query_hashrate(1, 6000, 6060).await.unwrap();
+        // All 6 samples fall into the same 60-second bucket
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].timestamp, 6000);
+        // Average of 6 samples of 1000 difficulty each = 1000
+        // (1000 * 2^32) / 10 seconds = 429,496,729,600 H/s
+        assert_eq!(results[0].hashrate_hs, 429_496_729_600.0);
     }
 
     #[tokio::test]
@@ -331,7 +349,7 @@ mod tests {
         let storage = SqliteStorage::new(&db_path).await.unwrap();
 
         // Store samples from multiple downstreams at the same timestamp
-        let timestamp = 2000;
+        let timestamp = 6000;
 
         let down1 = DownstreamSnapshot {
             downstream_id: 1,
@@ -340,6 +358,7 @@ mod tests {
             shares_lifetime: 100,
             shares_in_window: 10,
             sum_difficulty_in_window: 1000.0,
+            window_seconds: 10,
             timestamp,
         };
 
@@ -350,6 +369,7 @@ mod tests {
             shares_lifetime: 50,
             shares_in_window: 5,
             sum_difficulty_in_window: 500.0,
+            window_seconds: 10,
             timestamp,
         };
 
@@ -357,16 +377,16 @@ mod tests {
         storage.store_downstream(&down2).await.unwrap();
 
         // Query each downstream separately
-        let results1 = storage.query_hashrate(1, 1000, 3000).await.unwrap();
-        let results2 = storage.query_hashrate(2, 1000, 3000).await.unwrap();
+        let results1 = storage.query_hashrate(1, 6000, 7000).await.unwrap();
+        let results2 = storage.query_hashrate(2, 6000, 7000).await.unwrap();
 
         assert_eq!(results1.len(), 1);
-        // 1000 difficulty / 10 seconds = 100 H/s
-        assert_eq!(results1[0].hashrate_hs, 100.0);
+        // (1000 * 2^32) / 10 seconds = 429,496,729,600 H/s
+        assert_eq!(results1[0].hashrate_hs, 429_496_729_600.0);
 
         assert_eq!(results2.len(), 1);
-        // 500 difficulty / 10 seconds = 50 H/s
-        assert_eq!(results2[0].hashrate_hs, 50.0);
+        // (500 * 2^32) / 10 seconds = 214,748,364,800 H/s
+        assert_eq!(results2[0].hashrate_hs, 214_748_364_800.0);
     }
 
     #[tokio::test]
@@ -376,7 +396,7 @@ mod tests {
 
         let storage = SqliteStorage::new(&db_path).await.unwrap();
 
-        let timestamp = 3000;
+        let timestamp = 6000;
 
         // Store samples from two miners at the same timestamp
         let down1 = DownstreamSnapshot {
@@ -386,6 +406,7 @@ mod tests {
             shares_lifetime: 100,
             shares_in_window: 10,
             sum_difficulty_in_window: 1000.0,
+            window_seconds: 10,
             timestamp,
         };
 
@@ -396,18 +417,21 @@ mod tests {
             shares_lifetime: 50,
             shares_in_window: 5,
             sum_difficulty_in_window: 1000.0,
+            window_seconds: 10,
             timestamp,
         };
 
         storage.store_downstream(&down1).await.unwrap();
         storage.store_downstream(&down2).await.unwrap();
 
-        let results = storage.query_aggregate_hashrate(2000, 4000).await.unwrap();
+        let results = storage.query_aggregate_hashrate(6000, 7000).await.unwrap();
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].timestamp, timestamp);
-        // (1000 + 1000) difficulty / 10 seconds = 200 H/s aggregate
-        assert_eq!(results[0].hashrate_hs, 200.0);
+        assert_eq!(results[0].timestamp, 6000);
+        // 2 samples with difficulty 1000 each in the same bucket
+        // SUM = 2000, COUNT = 2, avg = 1000
+        // (1000 * 2^32) / 10 seconds = 429,496,729,600 H/s
+        assert_eq!(results[0].hashrate_hs, 429_496_729_600.0);
     }
 
     #[tokio::test]
@@ -432,8 +456,10 @@ mod tests {
 
         let storage = SqliteStorage::new(&db_path).await.unwrap();
 
-        // Store samples at different timestamps
-        for ts in [1000, 1100, 1200, 1300].iter() {
+        // Store samples at different timestamps spanning multiple 60-second buckets
+        // 6000, 6010 -> bucket 6000 (6000/60*60 = 6000, 6010/60*60 = 6000)
+        // 6120, 6130 -> bucket 6120 (6120/60*60 = 6120, 6130/60*60 = 6120)
+        for ts in [6000u64, 6010, 6120, 6130].iter() {
             let downstream = DownstreamSnapshot {
                 downstream_id: 1,
                 name: "miner_1".to_string(),
@@ -441,17 +467,18 @@ mod tests {
                 shares_lifetime: 100,
                 shares_in_window: 10,
                 sum_difficulty_in_window: 100.0,
+                window_seconds: 10,
                 timestamp: *ts,
             };
             storage.store_downstream(&downstream).await.unwrap();
         }
 
-        // Query with specific range
-        let results = storage.query_hashrate(1, 1050, 1250).await.unwrap();
+        // Query with specific range that includes both buckets (6000-6020 for first, 6120+ for second)
+        let results = storage.query_hashrate(1, 6000, 6250).await.unwrap();
 
-        // Should only get samples at 1100 and 1200
+        // Should get two 60-second buckets
         assert_eq!(results.len(), 2);
-        assert_eq!(results[0].timestamp, 1100);
-        assert_eq!(results[1].timestamp, 1200);
+        assert_eq!(results[0].timestamp, 6000); // First bucket (samples at 6000, 6010)
+        assert_eq!(results[1].timestamp, 6120); // Second bucket (samples at 6120, 6130)
     }
 }

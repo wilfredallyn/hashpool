@@ -76,6 +76,11 @@ impl WindowedMetricsCollector {
             .count() as u64
     }
 
+    /// Get the window size in seconds.
+    pub fn window_seconds(&self) -> u64 {
+        self.window_seconds
+    }
+
     /// Get all recent shares (used mainly for testing/debugging).
     pub fn recent_shares(&self) -> &[(u64, f64)] {
         &self.shares

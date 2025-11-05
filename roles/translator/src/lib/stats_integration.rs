@@ -104,6 +104,7 @@ impl TranslatorSv2 {
                             shares_lifetime: miner.shares_submitted,
                             shares_in_window: miner.metrics_collector.shares_in_window(),
                             sum_difficulty_in_window: miner.metrics_collector.sum_difficulty_in_window(),
+                            window_seconds: miner.metrics_collector.window_seconds(),
                             timestamp: unix_timestamp(),
                         }
                     })
