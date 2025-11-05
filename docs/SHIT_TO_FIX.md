@@ -288,6 +288,11 @@ While others work fine:
 - `jd-client.log` - 7.9 MB (working)
 - `jd-server.log` - 644 KB (working)
 
+**Related Issue: Stats-Pool Falls Back to .devenv Database**
+- When `stats-pool` config file is missing or not found, it falls back to using `/opt/hashpool/.devenv/state/stats-pool/metrics.db` instead of the configured production path
+- This causes silent failures where the service runs but uses the wrong database, resulting in empty graphs on the web dashboard
+- **Fix:** Ensure config file path is correct in systemd service definition and that the config file is deployed properly
+
 **Root Cause:**
 Services like mint, stats-pool, stats-proxy, web-pool, and web-proxy use different logging mechanisms or don't support the `-f` flag that was added to systemd service definitions. They're probably logging to stdout/stderr which is being discarded.
 
