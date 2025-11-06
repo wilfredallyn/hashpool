@@ -9,6 +9,7 @@ pub struct Config {
     pub client_poll_interval_secs: u64,
     pub request_timeout_secs: u64,
     pub pool_idle_timeout_secs: u64,
+    pub log_file: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -65,6 +66,13 @@ impl Default for HttpClientConfig {
 impl Config {
     pub fn from_args() -> Result<Self, Box<dyn std::error::Error>> {
         let args: Vec<String> = env::args().collect();
+
+        // Extract log file if provided (for tracing setup in main)
+        let log_file = args
+            .iter()
+            .position(|arg| arg == "-f" || arg == "--log-file")
+            .and_then(|i| args.get(i + 1))
+            .map(|s| s.clone());
 
         // Load web-pool config file (can be overridden via CLI)
         let web_pool_config_path = args
@@ -139,6 +147,7 @@ impl Config {
                 .http_client
                 .pool_idle_timeout_secs
                 .unwrap_or(300),
+            log_file,
         })
     }
 }

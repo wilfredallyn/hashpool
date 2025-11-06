@@ -28,6 +28,8 @@ use lib::{connect_to_pool_sv2, setup_mint};
 #[tokio::main]
 async fn main() -> Result<()> {
     // Respect RUST_LOG env var, defaulting to info level with dependency filtering
+    // Note: CDK mint uses CDK's tracing configuration. To log to file, redirect stdout/stderr
+    // in the systemd service or use RUST_LOG with external log capture.
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn,hyper=warn,h2=warn"));
 
@@ -35,23 +37,20 @@ async fn main() -> Result<()> {
         .with_env_filter(env_filter)
         .init();
 
-    let mut args = std::env::args().skip(1); // Skip binary name
+    let args: Vec<String> = std::env::args().skip(1).collect();
 
-    let mint_config_path = match (args.next().as_deref(), args.next()) {
-        (Some("-c"), Some(path)) => path,
-        _ => {
-            eprintln!("Usage: -c <mint_config_path> -g <global_config_path>");
-            std::process::exit(1);
-        }
-    };
+    // Simple argument parser: extract values by flag
+    fn get_arg(args: &[String], flag: &str) -> Option<String> {
+        args.windows(2)
+            .find(|w| w[0] == flag)
+            .map(|w| w[1].clone())
+    }
 
-    let global_config_path = match (args.next().as_deref(), args.next()) {
-        (Some("-g"), Some(path)) => path,
-        _ => {
-            eprintln!("Usage: -c <mint_config_path> -g <global_config_path>");
-            std::process::exit(1);
-        }
-    };
+    let mint_config_path = get_arg(&args, "-c")
+        .ok_or_else(|| anyhow::anyhow!("Missing required argument: -c <mint_config_path>"))?;
+    let global_config_path = get_arg(&args, "-g")
+        .ok_or_else(|| anyhow::anyhow!("Missing required argument: -g <global_config_path>"))?;
+    let _log_file = get_arg(&args, "-f").or_else(|| get_arg(&args, "--log-file"));
 
     // Parse mint config
     let mint_config_str = fs::read_to_string(&mint_config_path)?;

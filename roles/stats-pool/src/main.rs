@@ -13,14 +13,26 @@ use stats_pool::{db::StatsData, stats_handler::StatsHandler};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
-
     let config = Config::from_args()?;
+
+    // Setup tracing with optional file output
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    let fmt_layer = tracing_subscriber::fmt()
+        .with_env_filter(env_filter);
+
+    if let Some(log_file) = &config.log_file {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_file)
+            .map_err(|e| format!("Failed to open log file {}: {}", log_file, e))?;
+        fmt_layer.with_writer(std::sync::Arc::new(file)).init();
+    } else {
+        fmt_layer.init();
+    }
+
     info!("Starting pool-stats service");
     info!("TCP server: {}", config.tcp_address);
     info!("HTTP server: {}", config.http_address);

@@ -9,16 +9,27 @@ use stats_proxy::{api, config::Config, db::StatsData, stats_handler::StatsHandle
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
-
     // Load configuration
     let config = Config::from_args()?;
+
+    // Setup tracing with optional file output
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+
+    let fmt_layer = tracing_subscriber::fmt()
+        .with_env_filter(env_filter);
+
+    if let Some(log_file) = &config.log_file {
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_file)
+            .map_err(|e| format!("Failed to open log file {}: {}", log_file, e))?;
+        fmt_layer.with_writer(std::sync::Arc::new(file)).init();
+    } else {
+        fmt_layer.init();
+    }
+
     info!("Starting proxy-stats service");
     info!("TCP server: {}", config.tcp_address);
     info!("HTTP server: {}", config.http_address);

@@ -268,60 +268,6 @@ Follow-up: After the hub owns pending state, the poller can just iterate `hub.pe
 
 ## Low Priority
 
-### Production Logging Not Working For Several Services
-
-**Status:** Empty log files in /var/log/hashpool/ (0 bytes)
-**Priority:** High - Cannot debug production issues without logs
-
-**Current Problem:**
-Several services are running but not logging to files in production:
-- `mint.log` - 0 bytes (empty)
-- `stats-pool.log` - 0 bytes (empty)
-- `stats-proxy.log` - 0 bytes (empty)
-- `web-pool.log` - 0 bytes (empty)
-- `web-proxy.log` - 0 bytes (empty)
-
-While others work fine:
-- `bitcoind.log` - 3.2 MB (working)
-- `pool.log` - 19.8 MB (working)
-- `proxy.log` - 156 MB (working)
-- `jd-client.log` - 7.9 MB (working)
-- `jd-server.log` - 644 KB (working)
-
-**Related Issue: Stats-Pool Falls Back to .devenv Database**
-- When `stats-pool` config file is missing or not found, it falls back to using `/opt/hashpool/.devenv/state/stats-pool/metrics.db` instead of the configured production path
-- This causes silent failures where the service runs but uses the wrong database, resulting in empty graphs on the web dashboard
-- **Fix:** Ensure config file path is correct in systemd service definition and that the config file is deployed properly
-
-**Root Cause:**
-Services like mint, stats-pool, stats-proxy, web-pool, and web-proxy use different logging mechanisms or don't support the `-f` flag that was added to systemd service definitions. They're probably logging to stdout/stderr which is being discarded.
-
-**What Needs To Happen:**
-1. Investigate why mint, stats-pool, stats-proxy, web-pool, and web-proxy aren't writing logs
-2. Check if these services support the `-f` log file flag (they may use different logging libraries)
-3. Either:
-   a. Add proper logging flag support to these services, OR
-   b. Configure systemd to capture stdout/stderr to files (StandardOutput=file:/var/log/hashpool/service.log), OR
-   c. Implement proper logging in the code (e.g., via tracing crate like translator/pool use)
-4. Verify all services log properly after fix
-5. Consider implementing log rotation (logrotate) since proxy.log is already 156 MB
-
-**Affected Services:**
-- `roles/mint` - Logger implementation check needed
-- `roles/stats-pool` - Logger implementation check needed
-- `roles/stats-proxy` - Logger implementation check needed
-- `roles/web-pool` - Logger implementation check needed
-- `roles/web-proxy` - Logger implementation check needed
-
-**Systemd Service Files to Update:**
-- `scripts/systemd/hashpool-mint.service`
-- `scripts/systemd/hashpool-stats-pool.service`
-- `scripts/systemd/hashpool-stats-proxy.service`
-- `scripts/systemd/hashpool-web-pool.service`
-- `scripts/systemd/hashpool-web-proxy.service`
-
----
-
 ### Systemd Service Environment Configuration Scattered
 
 **Status:** Works but repetitive
