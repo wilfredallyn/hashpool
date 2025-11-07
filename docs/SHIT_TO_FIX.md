@@ -123,61 +123,6 @@ The mint service connects to the pool using `PlainConnection` which:
 
 ---
 
-### Web-Proxy Tightly Coupled To Translator Proxy Config
-
-**Status:** Working but architecturally problematic
-**Priority:** Medium - Configuration Management
-
-**Current Problem:**
-`roles/web-proxy/src/config.rs` loads the entire **translator proxy configuration file** (`tproxy.config.toml`) just to extract 4 fields:
-- `downstream_address`
-- `downstream_port`
-- `upstream_address`
-- `upstream_port`
-
-**Why This Sucks:**
-1. **Tight coupling** - Web-proxy is now dependent on translator config schema
-2. **Schema pollution** - tproxy.config.toml must include fields meant for web-proxy display
-3. **Deployment fragility** - Changing translator config can break web-proxy even if unrelated
-4. **Conceptual confusion** - Web-proxy shouldn't care about translator internals
-5. **Shared config duplication** - These values should come from shared config, not translator-specific config
-
-**Location:**
-- `roles/web-proxy/src/config.rs:119-128` - Loads tproxy config
-- `config/tproxy.config.toml:29-30` - Has flat `upstream_address/upstream_port` fields just for web-proxy
-
-**What Needs To Happen:**
-1. Move network topology config (downstream/upstream addresses and ports) to shared config
-   - Add to `config/shared/miner.toml` or `config/shared/pool.toml`
-   - Or create `config/shared/network.toml`
-2. Create a shim/adapter in translator config to read from shared config if needed
-   - This maintains SRI config compatibility without duplication
-3. Update web-proxy to read from shared config instead of tproxy.config.toml
-4. Consider: Should `stats_proxy_url` also come from shared config?
-
-**Recommended Structure:**
-```toml
-# config/shared/network.toml
-[proxy]
-downstream_address = "0.0.0.0"
-downstream_port = 34255
-upstream_address = "127.0.0.1"
-upstream_port = 34254
-```
-
-**Then in translator and web-proxy:**
-```rust
-// Both read from shared config
-let network_config = load_shared_config("network.toml")?;
-```
-
-**Impact on SRI:**
-- Keep SRI configs as-is for backward compatibility
-- The shared config would be a new layer that doesn't break existing SRI structure
-- Can be gradual migration (Phase 4 or later)
-
----
-
 ## Medium Priority
 
 ### Stats Protocol: Newline-Delimited JSON
@@ -216,43 +161,6 @@ while let Some(newline_pos) = leftover.iter().position(|&b| b == b'\n') {
 
 **Recommendation:** Keep for now, revisit when we settle on stats architecture
 
-### Time Series Data Not Being Collected
-
-**Status:** Hashrate samples table exists but nothing writes to it
-**Priority:** Medium - Needed for dashboard graphs
-
-**Problem:**
-- `hashrate_samples` table created but **0 rows** in database
-- No code inserts hashrate samples periodically
-- `get_hashrate_history()` function exists but returns empty results
-- Can't graph hashrate over time without data
-
-**What Needs To Happen:**
-1. Add periodic sampling task to pool-stats (every 5 minutes?)
-2. Sample current hashrate from `current_stats` and insert into `hashrate_samples`
-3. Implement proper hashrate calculation (not just share count)
-4. Add data retention policy (delete samples older than 7 days?)
-
-**Example implementation:**
-```rust
-// In pool-stats main loop or separate task
-tokio::spawn(async move {
-    let mut interval = tokio::time::interval(Duration::from_secs(300)); // 5 min
-    loop {
-        interval.tick().await;
-        if let Err(e) = db.sample_current_hashrate().await {
-            error!("Failed to sample hashrate: {}", e);
-        }
-    }
-});
-```
-
-**Current State:**
-- `quote_history`: ✅ Being populated (works correctly)
-- `hashrate_samples`: ❌ Empty (not being written)
-
----
-
 ### Mint Quote Plumbing Cleanups (from rework plan)
 
 **Status:** Functional but carrying technical debt
@@ -260,7 +168,7 @@ tokio::spawn(async move {
 
 1. **Unify quote tracking in the hub.** `QuotePoller` still maintains its own `pending_quotes` map (`roles/pool/src/lib/mining_pool/quote_poller.rs:28`). Move it to rely on `MintPoolMessageHub::pending_quote` / `PendingQuoteContext` so there is one source of truth for outstanding quotes.
 2. **Use typed frame builders.** The mint forwarding path still hand-builds frames with `StandardSv2Frame::from_bytes_unchecked()` (`roles/pool/src/lib/mining_pool/mint_connection.rs:315`). Switch to the helpers in `roles/roles-utils/mint-pool-messaging/src/sv2_frames.rs` to remove manual header math.
-3. **Decide who owns channel context.** `MintIntegrationManager` only proxies locking-key lookups (`roles/pool/src/lib/mining_pool/mint_integration.rs:14`). Fold that state into `MintPoolMessageHub` (or document why we can’t) so quote routing doesn’t depend on duplicate maps.
+3. **Decide who owns channel context.** `MintIntegrationManager` only proxies locking-key lookups (`roles/pool/src/lib/mining_pool/mint_integration.rs:14`). Fold that state into `MintPoolMessageHub` (or document why we can't) so quote routing doesn't depend on duplicate maps.
 
 Follow-up: After the hub owns pending state, the poller can just iterate `hub.pending_quotes()` and we can delete the bespoke tracker entirely.
 
