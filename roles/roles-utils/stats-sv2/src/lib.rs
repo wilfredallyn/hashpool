@@ -3,11 +3,13 @@
 //! This crate provides shared types and storage abstractions for collecting
 //! and querying hashrate data from translator and pool services.
 
+pub mod bucketing;
 pub mod metrics;
 pub mod storage;
 pub mod types;
 pub mod windowing;
 
+pub use bucketing::calculate_bucket_size;
 pub use metrics::derive_hashrate;
 pub use storage::StatsStorage;
 pub use types::{DownstreamSnapshot, ServiceSnapshot, ServiceType};

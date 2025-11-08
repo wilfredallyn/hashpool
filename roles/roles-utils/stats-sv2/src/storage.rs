@@ -1,5 +1,6 @@
 //! SQLite storage backend for time-series metrics.
 
+use crate::bucketing::calculate_bucket_size;
 use crate::types::{DownstreamSnapshot, HashratePoint};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Pool, Sqlite, Row};
@@ -205,11 +206,14 @@ impl StatsStorage for SqliteStorage {
         from_timestamp: u64,
         to_timestamp: u64,
     ) -> Result<Vec<HashratePoint>> {
-        // Aggregate data into 60-second buckets to smooth the graph
+        // Calculate adaptive bucket size to maintain ~60 data points per graph
+        let bucket_seconds = calculate_bucket_size(from_timestamp, to_timestamp, 60);
+
+        // Aggregate data into calculated buckets to smooth the graph
         let rows = sqlx::query(
             r#"
             SELECT
-                (timestamp / 60) * 60 as bucket_timestamp,
+                (timestamp / ?) * ? as bucket_timestamp,
                 SUM(CAST(sum_difficulty AS REAL)) as total_difficulty,
                 COUNT(*) as sample_count,
                 MAX(window_seconds) as window_seconds
@@ -219,6 +223,8 @@ impl StatsStorage for SqliteStorage {
             ORDER BY bucket_timestamp ASC
             "#,
         )
+        .bind(bucket_seconds as i64)
+        .bind(bucket_seconds as i64)
         .bind(downstream_id as i32)
         .bind(from_timestamp as i64)
         .bind(to_timestamp as i64)
@@ -233,11 +239,14 @@ impl StatsStorage for SqliteStorage {
         from_timestamp: u64,
         to_timestamp: u64,
     ) -> Result<Vec<HashratePoint>> {
-        // Aggregate data into 60-second buckets to smooth the graph
+        // Calculate adaptive bucket size to maintain ~60 data points per graph
+        let bucket_seconds = calculate_bucket_size(from_timestamp, to_timestamp, 60);
+
+        // Aggregate data into calculated buckets to smooth the graph
         let rows = sqlx::query(
             r#"
             SELECT
-                (timestamp / 60) * 60 as bucket_timestamp,
+                (timestamp / ?) * ? as bucket_timestamp,
                 SUM(CAST(sum_difficulty AS REAL)) as total_difficulty,
                 COUNT(*) as sample_count,
                 MAX(window_seconds) as window_seconds
@@ -247,6 +256,8 @@ impl StatsStorage for SqliteStorage {
             ORDER BY bucket_timestamp ASC
             "#,
         )
+        .bind(bucket_seconds as i64)
+        .bind(bucket_seconds as i64)
         .bind(from_timestamp as i64)
         .bind(to_timestamp as i64)
         .fetch_all(&self.pool)
@@ -286,7 +297,8 @@ mod tests {
 
         let storage = SqliteStorage::new(&db_path).await.unwrap();
 
-        // Use timestamp 6000 (divides evenly into 60-second buckets)
+        // Use timestamp 6000
+        // Query range: 0 to 7000 (7000s) / 60 points = 116.67s bucket → rounds to 300s (5m)
         let downstream = DownstreamSnapshot {
             downstream_id: 1,
             name: "test_miner".to_string(),
@@ -302,7 +314,7 @@ mod tests {
 
         let results = storage.query_hashrate(1, 0, 7000).await.unwrap();
         assert_eq!(results.len(), 1);
-        // 6000 / 60 * 60 = 6000 (even bucket boundary)
+        // 6000 / 300 * 300 = 6000 (bucket boundary at 5-minute intervals)
         assert_eq!(results[0].timestamp, 6000);
         // (100 * 2^32) / 10 seconds = 42,949,672,960 H/s
         assert_eq!(results[0].hashrate_hs, 42_949_672_960.0);
@@ -315,8 +327,8 @@ mod tests {
 
         let storage = SqliteStorage::new(&db_path).await.unwrap();
 
-        // Store samples at 10-second intervals within a 60-second bucket
-        // Use 6000 as base (divisible by 60)
+        // Store samples at 10-second intervals within a bucket
+        // Query range: 6000 to 6060 (60s) / 60 points = 1s bucket → rounds to 60s
         for i in 0..6 {
             let downstream = DownstreamSnapshot {
                 downstream_id: 1,
@@ -331,9 +343,9 @@ mod tests {
             storage.store_downstream(&downstream).await.unwrap();
         }
 
-        // Query samples - should be aggregated into 60-second bucket
+        // Query samples - should be aggregated into 60-second bucket (as before)
         let results = storage.query_hashrate(1, 6000, 6060).await.unwrap();
-        // All 6 samples fall into the same 60-second bucket
+        // All 6 samples fall into the same bucket
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].timestamp, 6000);
         // Average of 6 samples of 1000 difficulty each = 1000
@@ -456,9 +468,9 @@ mod tests {
 
         let storage = SqliteStorage::new(&db_path).await.unwrap();
 
-        // Store samples at different timestamps spanning multiple 60-second buckets
-        // 6000, 6010 -> bucket 6000 (6000/60*60 = 6000, 6010/60*60 = 6000)
-        // 6120, 6130 -> bucket 6120 (6120/60*60 = 6120, 6130/60*60 = 6120)
+        // Store samples at different timestamps spanning multiple buckets
+        // Query range: 6000 to 6250 (250s) / 60 points = 4.16s bucket → rounds to 60s
+        // So we expect samples to fall into 60-second boundaries
         for ts in [6000u64, 6010, 6120, 6130].iter() {
             let downstream = DownstreamSnapshot {
                 downstream_id: 1,
@@ -473,10 +485,10 @@ mod tests {
             storage.store_downstream(&downstream).await.unwrap();
         }
 
-        // Query with specific range that includes both buckets (6000-6020 for first, 6120+ for second)
+        // Query with specific range
         let results = storage.query_hashrate(1, 6000, 6250).await.unwrap();
 
-        // Should get two 60-second buckets
+        // Should get two 60-second buckets with adaptive bucketing
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].timestamp, 6000); // First bucket (samples at 6000, 6010)
         assert_eq!(results[1].timestamp, 6120); // Second bucket (samples at 6120, 6130)
