@@ -330,7 +330,7 @@
                 };
             }
 
-            createAggregateChart(canvasId, data, animate = true) {
+            createAggregateChart(canvasId, data, animate = true, timeRangeHours = 1) {
                 const ctx = document.getElementById(canvasId);
                 if (!ctx) throw new Error(`Canvas element #${canvasId} not found`);
 
@@ -339,8 +339,71 @@
                     ctx.chart.destroy();
                 }
 
-                const labels = data.map(p => this._formatTime(p.timestamp));
-                const values = data.map(p => p.hashrate_hs);
+                // Use data as-is with natural Chart.js spacing
+                const labels = data.map(p => this._formatTimeLabel(p.timestamp, timeRangeHours));
+                const values = data.map(p => ({
+                    x: p.timestamp,
+                    y: p.hashrate_hs
+                }));
+
+                // Find date boundaries for vertical lines (only for 7d+ ranges)
+                const dateBoundaryIndices = [];
+                const dateBoundaryLabels = [];
+                if (timeRangeHours >= 168) {
+                    let lastDate = null;
+                    data.forEach((point, index) => {
+                        const date = new Date(point.timestamp * 1000);
+                        const dateKey = `${date.getMonth()}-${date.getDate()}`;
+                        if (lastDate !== null && lastDate !== dateKey) {
+                            dateBoundaryIndices.push(index);
+                            dateBoundaryLabels.push(date.toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric'
+                            }));
+                        }
+                        lastDate = dateKey;
+                    });
+                }
+
+                // Register plugin to draw date boundary lines with labels
+                Chart.register({
+                    id: 'dateBoundaryLines',
+                    afterDatasetsDraw(chart) {
+                        const boundaryIndices = chart.options.plugins.dateBoundaryLines?.boundaryIndices || [];
+                        const boundaryData = chart.options.plugins.dateBoundaryLines?.boundaryData || [];
+                        if (boundaryIndices.length === 0) return;
+
+                        const ctx = chart.ctx;
+                        const xScale = chart.scales.x;
+                        const yScale = chart.scales.y;
+
+                        ctx.save();
+                        ctx.strokeStyle = 'rgba(0, 200, 0, 0.6)';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]); // Dashed line
+
+                        boundaryIndices.forEach((index, i) => {
+                            const x = xScale.getPixelForValue(index);
+
+                            // Draw vertical line
+                            ctx.beginPath();
+                            ctx.moveTo(x, yScale.top);
+                            ctx.lineTo(x, yScale.bottom);
+                            ctx.stroke();
+
+                            // Draw date label
+                            if (boundaryData[i]) {
+                                ctx.fillStyle = 'rgba(0, 200, 0, 0.8)';
+                                ctx.font = 'bold 12px "Courier New", monospace';
+                                ctx.textAlign = 'center';
+                                ctx.textBaseline = 'top';
+                                ctx.fillText(boundaryData[i], x, yScale.top + 5);
+                            }
+                        });
+
+                        ctx.restore();
+                    }
+                });
 
                 const chart = new Chart(ctx, {
                     type: 'line',
@@ -373,18 +436,33 @@
                             legend: {
                                 display: false
                             },
+                            dateBoundaryLines: {
+                                boundaryIndices: dateBoundaryIndices,
+                                boundaryData: dateBoundaryLabels
+                            },
                             tooltip: {
                                 backgroundColor: 'rgba(0, 0, 0, 0.8)',
                                 titleColor: '#00ff00',
+                                titleFont: { weight: 'normal' },
                                 bodyColor: '#00ff00',
                                 borderColor: '#00ff00',
                                 borderWidth: 1,
                                 padding: 10,
                                 displayColors: false,
                                 callbacks: {
-                                    label: (context) => {
-                                        const hashrate = context.raw;
+                                    title: (context) => {
+                                        const hashrate = context[0].raw.y;
                                         return this._formatHashrate(hashrate);
+                                    },
+                                    label: (context) => {
+                                        const timestamp = context.raw.x;
+                                        const date = new Date(timestamp * 1000);
+                                        const time = date.toLocaleTimeString('en-US', {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            hour12: true
+                                        });
+                                        return time;
                                     }
                                 }
                             }
@@ -428,6 +506,15 @@
 
             _formatTime(unixSeconds) {
                 const date = new Date(unixSeconds * 1000);
+                return date.toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+
+            _formatTimeLabel(unixSeconds, timeRangeHours) {
+                const date = new Date(unixSeconds * 1000);
+                // Always show time on x-axis labels
                 return date.toLocaleTimeString('en-US', {
                     hour: '2-digit',
                     minute: '2-digit'
@@ -575,7 +662,7 @@
                 const data = await response.json();
 
                 if (data.data && data.data.length > 0) {
-                    charts.createAggregateChart('aggregate-chart', data.data, false);
+                    charts.createAggregateChart('aggregate-chart', data.data, false, timeRangeHours);
                     const stats = charts.calculateStats(data.data);
                     document.getElementById('current-hashrate').textContent = charts._formatHashrate(stats.current);
                     document.getElementById('avg-hashrate').textContent = charts._formatHashrate(stats.avg);
