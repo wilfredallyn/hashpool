@@ -7,6 +7,7 @@ This directory contains nginx site configuration files for the hashpool testnet 
 - `sites-available/pool.hashpool.dev` - Pool dashboard (web-pool → 127.0.0.1:8080)
 - `sites-available/proxy.hashpool.dev` - Miner dashboard (web-proxy → 127.0.0.1:3000)
 - `sites-available/mint.hashpool.dev` - Mint HTTP API (mint → 127.0.0.1:3338)
+- `sites-available/wallet.hashpool.dev` - Cashu wallet SPA (serves /opt/cashu.me/dist/spa)
 
 ## Deployment
 
@@ -44,3 +45,4 @@ sudo systemctl reload nginx
 | pool.hashpool.dev | 8080 | web-pool dashboard |
 | proxy.hashpool.dev | 3000 | web-proxy dashboard |
 | mint.hashpool.dev | 3338 | mint HTTP API |
+| wallet.hashpool.dev | - | cashu.me wallet SPA (static files from /opt/cashu.me/dist/spa) |
