@@ -67,14 +67,25 @@ generate-blocks COUNT="1":
     @echo "Generating {{COUNT}} blocks in regtest..."
     @bitcoin-cli -datadir=.devenv/state/bitcoind -conf=$(pwd)/config/bitcoin.conf -rpcuser=username -rpcpassword=password -regtest -rpcwallet=regtest -generate {{COUNT}}
 
-# Open cdk sqlite terminal client (wallet or mint)
+# Open sqlite terminal client for various databases
+# Usage: just db [wallet|mint|stats|all]
 db TYPE="":
     @if [ "{{TYPE}}" = "wallet" ]; then \
         sqlite3 -cmd ".mode line" .devenv/state/translator/wallet.sqlite; \
     elif [ "{{TYPE}}" = "mint" ]; then \
         sqlite3 -cmd ".mode line" .devenv/state/mint/mint.sqlite; \
+    elif [ "{{TYPE}}" = "stats" ]; then \
+        sqlite3 -cmd ".mode line" .devenv/state/stats-pool/metrics.db; \
+    elif [ "{{TYPE}}" = "all" ]; then \
+        echo "Available databases:"; \
+        echo "  - Wallet:     .devenv/state/translator/wallet.sqlite"; \
+        echo "  - Mint:       .devenv/state/mint/mint.sqlite"; \
+        echo "  - Stats Pool: .devenv/state/stats-pool/metrics.db"; \
+        echo ""; \
+        echo "Usage: just db [wallet|mint|stats-pool|stats|all]"; \
     else \
-        echo "Error: TYPE must be 'wallet' or 'mint'"; \
+        echo "Error: TYPE must be 'wallet', 'mint', 'stats', or 'all'"; \
+        echo "Usage: just db [wallet|mint|stats-pool|stats|all]"; \
         exit 1; \
     fi
 
