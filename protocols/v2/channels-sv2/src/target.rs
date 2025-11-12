@@ -8,15 +8,17 @@ use core::{cmp::max, fmt::Write, ops::Div};
 use mining_sv2::Target;
 use primitive_types::U256 as U256Primitive;
 /// Converts a `Target` to a `f64` difficulty.
+///
+/// Vardiff targets are inverted (reciprocal of Bitcoin difficulty targets).
+/// When a miner gets a vardiff target, a LARGER target value means LOWER difficulty.
+/// This function inverts that relationship to return proper difficulty units.
+///
+/// Bitcoin formula: difficulty = max_target / current_target
+/// Vardiff formula: target = 2^256 / desired_difficulty
+/// Therefore: difficulty = 2^256 / vardiff_target (which is the inverse)
 pub fn target_to_difficulty(target: Target) -> f64 {
-    // Genesis block target: 0x00000000ffff0000000000000000000000000000000000000000000000000000
-    // (in little endian)
-    let max_target_bytes = [
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00,
-        0x00, 0x00,
-    ];
-    let max_target = U256Primitive::from_little_endian(&max_target_bytes);
+    // Maximum value for a 256-bit number
+    const TWO_POW_256: f64 = 1.157920892373162e77;  // 2^256
 
     // Convert input target to U256Primitive
     let target_u256: U256<'static> = target.into();
@@ -24,19 +26,18 @@ pub fn target_to_difficulty(target: Target) -> f64 {
     target_bytes.copy_from_slice(target_u256.inner_as_ref());
     let target = U256Primitive::from_little_endian(&target_bytes);
 
-    // Calculate difficulty = max_target / target
-    // We need to handle the full 256-bit values properly
-    // Convert to f64 by taking the ratio of the most significant bits
-    let max_target_high = (max_target >> 128).low_u128() as f64;
-    let max_target_low = max_target.low_u128() as f64;
+    // Convert to f64
+    // Extract high and low 128-bit parts
     let target_high = (target >> 128).low_u128() as f64;
     let target_low = target.low_u128() as f64;
 
     // Combine high and low parts with appropriate scaling
-    let max_target_f64 = max_target_high * (2.0f64.powi(128)) + max_target_low;
     let target_f64 = target_high * (2.0f64.powi(128)) + target_low;
 
-    max_target_f64 / target_f64
+    // Difficulty = 2^256 / target
+    // Vardiff formula: target = 2^256 / desired_difficulty
+    // Therefore: difficulty = 2^256 / target
+    TWO_POW_256 / target_f64
 }
 
 /// Converts a `u256` to a [`BlockHash`] type.

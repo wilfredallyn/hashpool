@@ -189,6 +189,13 @@ fn parse_timestamp_range(query: &str) -> (u64, u64) {
         }
     }
 
+    tracing::info!(
+        "API query parameters: from={}, to={}, time_range={}s",
+        from,
+        to,
+        to.saturating_sub(from)
+    );
+
     (from, to)
 }
 

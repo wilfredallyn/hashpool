@@ -155,19 +155,49 @@ impl SqliteStorage {
     /// Convert raw query rows to HashratePoint with bucketed aggregation.
     fn aggregate_rows_to_hashrate_points(rows: Vec<sqlx::sqlite::SqliteRow>) -> Vec<HashratePoint> {
         rows.iter()
-            .map(|row| {
+            .enumerate()
+            .map(|(idx, row)| {
                 let bucket_timestamp = row.get::<i64, _>("bucket_timestamp") as u64;
                 let total_difficulty = row.get::<f64, _>("total_difficulty");
                 let sample_count = row.get::<i64, _>("sample_count") as u64;
+                let bucket_duration_seconds = row.get::<i64, _>("bucket_duration_seconds") as u64;
                 let window_seconds = row.get::<i64, _>("window_seconds") as u64;
 
                 // Calculate average hashrate across samples
                 // Average the difficulty first, then derive hashrate
                 let avg_difficulty = total_difficulty / sample_count as f64;
 
+                // Use the actual bucket duration (time span from first to last sample in bucket).
+                // If bucket_duration is 0 (single sample), fall back to the sample's window_seconds.
+                // This preserves the measurement window for single-sample buckets while using
+                // actual duration for multi-sample aggregations.
+                let effective_duration = if bucket_duration_seconds > 0 {
+                    bucket_duration_seconds
+                } else {
+                    window_seconds
+                };
+
+                let hashrate = crate::metrics::derive_hashrate(avg_difficulty, effective_duration);
+
+                // Log first few and last few buckets for debugging
+                if idx < 3 || idx >= rows.len().saturating_sub(3) {
+                    tracing::debug!(
+                        "Bucket[{}] timestamp={}, total_diff={:.2}, samples={}, bucket_duration={}, window_secs={}, avg_diff={:.2}, effective_duration={}, hashrate={:.2}H/s",
+                        idx,
+                        bucket_timestamp,
+                        total_difficulty,
+                        sample_count,
+                        bucket_duration_seconds,
+                        window_seconds,
+                        avg_difficulty,
+                        effective_duration,
+                        hashrate
+                    );
+                }
+
                 HashratePoint {
                     timestamp: bucket_timestamp,
-                    hashrate_hs: crate::metrics::derive_hashrate(avg_difficulty, window_seconds),
+                    hashrate_hs: hashrate,
                 }
             })
             .collect()
@@ -181,6 +211,15 @@ impl StatsStorage for SqliteStorage {
         self.upsert_downstream(downstream).await?;
 
         // Store the hashrate sample (convert u64 to i64 for SQLite)
+        tracing::debug!(
+            "Storing downstream snapshot: downstream_id={}, timestamp={}, shares_in_window={}, sum_difficulty={}, window_seconds={}",
+            downstream.downstream_id,
+            downstream.timestamp,
+            downstream.shares_in_window,
+            downstream.sum_difficulty_in_window,
+            downstream.window_seconds
+        );
+
         sqlx::query(
             r#"
             INSERT INTO hashrate_samples
@@ -210,16 +249,42 @@ impl StatsStorage for SqliteStorage {
         let bucket_seconds = calculate_bucket_size(from_timestamp, to_timestamp, 60);
 
         // Aggregate data into calculated buckets to smooth the graph
+        // Key fix: Use the LATEST snapshot per bucket (MAX timestamp) instead of summing
+        // This prevents overcounting since each snapshot's sum_difficulty is already
+        // aggregated over a 60-second measurement window.
         let rows = sqlx::query(
             r#"
+            WITH bucketed AS (
+                SELECT
+                    timestamp,
+                    downstream_id,
+                    sum_difficulty,
+                    window_seconds,
+                    (timestamp / ?) * ? AS bucket_timestamp
+                FROM hashrate_samples
+                WHERE downstream_id = ? AND timestamp >= ? AND timestamp <= ?
+            ), ranked AS (
+                SELECT
+                    bucket_timestamp,
+                    timestamp,
+                    sum_difficulty,
+                    window_seconds,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY bucket_timestamp
+                        ORDER BY timestamp DESC
+                    ) AS rn,
+                    MAX(timestamp) OVER (PARTITION BY bucket_timestamp) -
+                        MIN(timestamp) OVER (PARTITION BY bucket_timestamp) AS bucket_duration_seconds
+                FROM bucketed
+            )
             SELECT
-                (timestamp / ?) * ? as bucket_timestamp,
-                SUM(CAST(sum_difficulty AS REAL)) as total_difficulty,
-                COUNT(*) as sample_count,
-                MAX(window_seconds) as window_seconds
-            FROM hashrate_samples
-            WHERE downstream_id = ? AND timestamp >= ? AND timestamp <= ?
-            GROUP BY bucket_timestamp
+                bucket_timestamp,
+                CAST(sum_difficulty AS REAL) AS total_difficulty,
+                1 AS sample_count,
+                bucket_duration_seconds,
+                window_seconds
+            FROM ranked
+            WHERE rn = 1
             ORDER BY bucket_timestamp ASC
             "#,
         )
@@ -242,16 +307,49 @@ impl StatsStorage for SqliteStorage {
         // Calculate adaptive bucket size to maintain ~60 data points per graph
         let bucket_seconds = calculate_bucket_size(from_timestamp, to_timestamp, 60);
 
+        tracing::info!(
+            "Query aggregate hashrate: from={}, to={}, bucket_seconds={}, time_range_seconds={}",
+            from_timestamp,
+            to_timestamp,
+            bucket_seconds,
+            to_timestamp.saturating_sub(from_timestamp)
+        );
+
         // Aggregate data into calculated buckets to smooth the graph
+        // Key fix: Use the LATEST snapshot per bucket (MAX timestamp) instead of summing
+        // This prevents overcounting since each snapshot's sum_difficulty is already
+        // aggregated over a 60-second measurement window.
         let rows = sqlx::query(
             r#"
+            WITH bucketed AS (
+                SELECT
+                    timestamp,
+                    downstream_id,
+                    sum_difficulty,
+                    window_seconds,
+                    (timestamp / ?) * ? AS bucket_timestamp
+                FROM hashrate_samples
+                WHERE timestamp >= ? AND timestamp <= ?
+            ), ranked AS (
+                SELECT
+                    bucket_timestamp,
+                    downstream_id,
+                    sum_difficulty,
+                    window_seconds,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY downstream_id, bucket_timestamp
+                        ORDER BY timestamp DESC
+                    ) AS rn
+                FROM bucketed
+            )
             SELECT
-                (timestamp / ?) * ? as bucket_timestamp,
-                SUM(CAST(sum_difficulty AS REAL)) as total_difficulty,
-                COUNT(*) as sample_count,
-                MAX(window_seconds) as window_seconds
-            FROM hashrate_samples
-            WHERE timestamp >= ? AND timestamp <= ?
+                bucket_timestamp,
+                SUM(CAST(sum_difficulty AS REAL)) AS total_difficulty,
+                1 AS sample_count,
+                0 AS bucket_duration_seconds,
+                MAX(window_seconds) AS window_seconds
+            FROM ranked
+            WHERE rn = 1
             GROUP BY bucket_timestamp
             ORDER BY bucket_timestamp ASC
             "#,
@@ -263,7 +361,21 @@ impl StatsStorage for SqliteStorage {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(Self::aggregate_rows_to_hashrate_points(rows))
+        tracing::info!(
+            "Query returned {} rows from database",
+            rows.len()
+        );
+
+        let points = Self::aggregate_rows_to_hashrate_points(rows);
+
+        tracing::info!(
+            "Aggregated to {} hashrate points; min={:.2}H/s, max={:.2}H/s",
+            points.len(),
+            points.iter().map(|p| p.hashrate_hs).fold(f64::INFINITY, f64::min),
+            points.iter().map(|p| p.hashrate_hs).fold(0.0, f64::max)
+        );
+
+        Ok(points)
     }
 }
 
@@ -343,14 +455,15 @@ mod tests {
             storage.store_downstream(&downstream).await.unwrap();
         }
 
-        // Query samples - should be aggregated into 60-second bucket (as before)
+        // Query samples - should be aggregated into 60-second bucket
         let results = storage.query_hashrate(1, 6000, 6060).await.unwrap();
         // All 6 samples fall into the same bucket
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].timestamp, 6000);
         // Average of 6 samples of 1000 difficulty each = 1000
-        // (1000 * 2^32) / 10 seconds = 429,496,729,600 H/s
-        assert_eq!(results[0].hashrate_hs, 429_496_729_600.0);
+        // Bucket duration: MAX(timestamp) - MIN(timestamp) = 6050 - 6000 = 50 seconds
+        // (1000 * 2^32) / 50 seconds = 85,899,345,920 H/s
+        assert_eq!(results[0].hashrate_hs, 85_899_345_920.0);
     }
 
     #[tokio::test]
@@ -440,10 +553,10 @@ mod tests {
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].timestamp, 6000);
-        // 2 samples with difficulty 1000 each in the same bucket
-        // SUM = 2000, COUNT = 2, avg = 1000
-        // (1000 * 2^32) / 10 seconds = 429,496,729,600 H/s
-        assert_eq!(results[0].hashrate_hs, 429_496_729_600.0);
+        // Aggregate query should sum downstream contributions.
+        // Two downstreams * 1000 difficulty each = 2000 difficulty in the bucket.
+        // (2000 * 2^32) / 10 seconds = 858,993,459,200 H/s.
+        assert_eq!(results[0].hashrate_hs, 858_993_459_200.0);
     }
 
     #[tokio::test]
