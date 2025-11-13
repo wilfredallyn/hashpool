@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0"></script>
     <style>
         body {
-            font-family: 'Courier New', monospace;
+            font-family: 'Liberation Mono', monospace;
             background: #1a1a1a;
             color: #00ff00;
             margin: 0;
@@ -106,7 +106,7 @@
             background: #1a1a1a;
             color: #00ff00;
             cursor: pointer;
-            font-family: 'Courier New', monospace;
+            font-family: 'Liberation Mono', monospace;
             transition: all 0.2s;
         }
         .time-btn:hover {
@@ -394,7 +394,7 @@
                             // Draw date label
                             if (boundaryData[i]) {
                                 ctx.fillStyle = 'rgba(0, 200, 0, 0.8)';
-                                ctx.font = 'bold 12px "Courier New", monospace';
+                                ctx.font = 'bold 12px "Liberation Mono", monospace';
                                 ctx.textAlign = 'center';
                                 ctx.textBaseline = 'top';
                                 ctx.fillText(boundaryData[i], x, yScale.top + 5);
@@ -476,7 +476,7 @@
                                 ticks: {
                                     color: '#00ff00',
                                     font: {
-                                        family: "'Courier New', monospace",
+                                        family: "'Liberation Mono', monospace",
                                         size: 12
                                     }
                                 }
@@ -490,7 +490,7 @@
                                 ticks: {
                                     color: '#00ff00',
                                     font: {
-                                        family: "'Courier New', monospace",
+                                        family: "'Liberation Mono', monospace",
                                         size: 12
                                     },
                                     callback: (value) => this._formatHashrate(value)
