@@ -1,150 +1,58 @@
-# Warm Start Time-Series Initialization Plan
+# Warm Start Time-Series Initialization
 
-## Overview
-Implement "warm start" for hashrate time-series by backfilling synthetic historical data on startup/miner connection, allowing graphs to show correct values immediately without the 0-to-correct ramp-up.
+## Goal
+Eliminate the "restart crater" on pool and translator hashrate graphs without inventing synthetic data or distorting upside estimates. After any process restart, charts should continue from the last known steady-state as soon as the stats service receives the next snapshot.
 
----
+## Key Idea
+Reuse the real `hashrate_samples` that are already persisted to SQLite every five seconds. When a process boots, hydrate each in-memory `WindowedMetricsCollector` with the most recent samples that fall inside its configured window. Because the data is historical and already reflects exact per-share difficulty sums, the collector immediately reports the same `sum_difficulty_in_window` it had before the restart. No new schema, no fake shares, no UI changes.
 
-## Phase 1: Data Structure Changes
-
-### 1.1 Extend MinerInfo to track data provenance
-```rust
-pub struct MinerInfo {
-    // ... existing fields ...
-    pub recent_shares: Vec<(u64, f64, bool)>,  // (timestamp, difficulty, is_synthetic)
-}
 ```
-- Add boolean flag to mark synthetic vs real shares
-- Synthetic shares are backfilled on startup
-- Real shares overwrite as they arrive
-
-### 1.2 Create helper function for synthetic backfill
-```rust
-pub async fn warm_start_miner(&self, id: u32, estimated_hashrate: f64)
-```
-- Called when miner connects or service restarts
-- Takes current `estimated_hashrate` from difficulty system
-- Generates 10 shares spread over past 10 seconds
-- Each share's difficulty = `(estimated_hashrate * 10) / 10` to match total
-- Marks all as `is_synthetic = true`
-
----
-
-## Phase 2: Translator Changes
-
-### 2.1 Update record_share() in miner_stats.rs
-- Mark incoming shares as `is_synthetic = false`
-- These will gradually replace the warm-start synthetic data
-
-### 2.2 Call warm_start_miner() when:
-- A new miner connects: `add_miner()` → call `warm_start_miner()` with `estimated_hashrate: 0.0` (let it build naturally)
-- Service starts: `TranslatorSv2::new()` → for each existing miner, call `warm_start_miner()` with current `estimated_hashrate`
-
-### 2.3 Update get_metrics_snapshot()
-- Calculate `sum_difficulty_in_window` from all shares (synthetic + real)
-- Include metadata: `has_synthetic_data: bool` and `synthetic_count: u32`
-
----
-
-## Phase 3: Stats-Pool Changes
-
-### 3.1 Extend HashratePoint struct
-```rust
-pub struct HashratePoint {
-    pub timestamp: u64,
-    pub hashrate_hs: f64,
-    pub is_synthetic: bool,  // NEW
-}
+      ┌────────────┐    snapshots    ┌──────────────────┐
+      │ pool/tproxy│ ─────────────▶ │ stats storage    │
+      └────────────┘                 │ (hashrate_samples│
+             ▲                       └──────────────────┘
+             │   warm-start query            │
+             └─────────────── replay recent ─┘
 ```
 
-### 3.2 Update storage.rs queries
-- Retrieve `is_synthetic` flag from database (or calculate on read)
-- Pass through to API responses
+## Requirements
+1. **Accuracy** – Warm-start must use only real snapshots that were already persisted; never invent synthetic difficulty or cap upside luck.
+2. **Isolation** – Translator and pool can warm-start independently; if one was down longer than its window, it simply begins empty again.
+3. **Safety** – Ignore stale samples (older than window) and handle missing data gracefully.
+4. **Minimal change** – Touch only stats plumbing (collector init + storage helper). The rest of the stack keeps using target-based difficulty.
 
-### 3.3 Update API responses
-- Include `is_synthetic` in `/api/hashrate` and `/api/downstream/{id}/hashrate` responses
+## Implementation Plan
 
----
+### 1. Storage Helper
+- Add `fn recent_samples(&self, downstream_id: u32, window_seconds: u64) -> Vec<HashrateSample>` to the SQLite implementation of `StatsStorage` (roles/roles-utils/stats-sv2/src/storage.rs).
+- Query `hashrate_samples` ordered by timestamp DESC, filtered to `timestamp >= now - window_seconds`, limited to e.g. 512 rows per downstream.
+- Return tuples `(timestamp, sum_difficulty, window_seconds)`; no schema change required.
 
-## Phase 4: Dashboard Changes
+### 2. Collector Hydration Utility
+- Introduce a helper (e.g., `warm_start_collector`) that accepts a mutable `WindowedMetricsCollector` plus the rows returned from step 1 and replays them oldest→newest.
+- When replaying, push the stored `sum_difficulty` values directly by calling a new method such as `collector.record_share_at(timestamp, difficulty)` to preserve original timestamps. If modifying the collector API is undesirable, expose a small internal method guarded under cfg(test) to avoid copying logic.
+- Skip any sample whose timestamp is older than `now - window_seconds` to prevent reintroducing stale data.
 
-### 4.1 Filter synthetic points before rendering
-- JavaScript receives all points (synthetic + real)
-- `Chart.js` dataset filters: only render where `is_synthetic: false`
-- This prevents the backfilled data from appearing on the graph
+### 3. Translator Integration
+- During translator startup (e.g., when building `MinerInfo` inside `add_miner` or when loading existing miners), call the storage helper and hydrate each miner’s `metrics_collector` before the first snapshot is emitted.
+- Log `info` when warm-start succeeds (`mined 43s of history restored for miner #123`). Fall back silently if the query returns nothing (fresh miner or DB cleared).
 
-### 4.2 Use estimated_hashrate for "current" display
-- Show `estimated_hashrate` separately (already correct)
-- Time-series graph shows only real data points (fills in gradually)
+### 4. Pool Integration
+- Extend `pool-stats` registry initialization to warm-start each downstream collector the same way. The pool stats service uses the identical `WindowedMetricsCollector`, so the helper can be shared.
 
----
+### 5. Testing
+- **Unit tests**: cover the new collector hydration function by feeding deterministic samples and asserting that `sum_difficulty_in_window()` matches expectations. Also test that out-of-window samples are ignored.
+- **Manual smoke**: run `devenv up`, let shares accumulate, restart pool/translator, and confirm `/api/hashrate` does not crater.
 
-## Phase 5: Testing
+## Operational Notes
+- If services are down longer than their window (e.g., 10 minutes for a 1-minute window), warm-start naturally returns no samples, so charts ramp from zero just as today.
+- Because we replay only the last `window_seconds`, we never double-count older work and we preserve upside spikes exactly as they occurred.
+- This approach keeps the persistent format unchanged, so no migration is needed for testnet or production deployments.
 
-### 5.1 Test warm start on miner connect
-- Start translator, connect miner
-- Check that `recent_shares` has 10 synthetic points immediately
-- Verify `get_metrics_snapshot()` includes them
+## Next Steps
+1. Implement storage helper + collector hydration utility.
+2. Wire pool + translator init paths to call the helper for each downstream/miner.
+3. Add unit tests for hydration logic.
+4. Verify via `devenv` restart that graphs remain stable.
 
-### 5.2 Test on service restart
-- Restart translator
-- Connect miner that's still submitting shares
-- Verify synthetic backfill uses the current `estimated_hashrate`
-- Check that new real shares are marked `is_synthetic = false`
-
-### 5.3 Test graph display
-- Verify dashboard filters out synthetic points
-- Only real data points appear on graph
-- Graph fills gradually as real shares arrive (no ramp-up from 0)
-
-### 5.4 Test metrics accuracy
-- Verify window calculations include synthetic data (for DB storage)
-- Verify API filtering removes synthetic before display
-- Verify hashrate values are correct
-
----
-
-## Phase 6: Cleanup & Validation
-
-### 6.1 Remove old window reset logic
-- Delete `cleanup_old_shares()` if no longer needed
-- Rely on natural share TTL (only store recent shares)
-
-### 6.2 Documentation
-- Document that synthetic data is internal only
-- Explain why it exists (warm start)
-
-### 6.3 Final verification
-- Restart service multiple times
-- Verify no 0-to-correct ramp-up behavior
-- Verify graphs show correct historical data
-
----
-
-## Key Design Decisions
-
-1. **Synthetic data is internal**: Never shown on dashboard, only used for calculations
-2. **Warm start on connect vs restart**: On new miner = start at 0 (natural), on restart = use last known rate
-3. **Granularity**: 10 points over 10 seconds = 1 second apart (matches typical snapshot interval)
-4. **Lifecycle**: Synthetic shares fade out naturally as real shares arrive
-
----
-
-## Success Criteria
-
-✅ Graph shows correct hashrate immediately (not ramping from 0)
-✅ Graph uses real data points only (synthetic hidden)
-✅ Restart doesn't reset to 0 (synthetic backfill bootstraps)
-✅ No artificial delay in convergence
-✅ All metrics remain accurate
-
----
-
-## Implementation Order
-
-1. Phase 1: Modify MinerInfo struct
-2. Phase 2: Implement warm_start_miner() and update translator
-3. Phase 3: Update stats-pool storage and API
-4. Phase 4: Update dashboard filtering
-5. Phase 5: Comprehensive testing
-6. Phase 6: Cleanup and documentation
+With this warm-start in place, the stats service always has enough real shares in memory to report accurate hashrate immediately after a restart—no synthetic data, no exaggerated upside, and no crater.
