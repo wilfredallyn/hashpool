@@ -102,6 +102,65 @@ watch_logs() {
   tmux attach-session -t hashpool-logs
 }
 
+clean_data() {
+  if [ -z "${2:-}" ]; then
+    echo "Usage: $0 clean <type>"
+    echo ""
+    echo "Available clean types:"
+    echo "  cashu    - Delete all SQLite data (wallet and mint)"
+    echo "  regtest  - Delete regtest blockchain data"
+    echo "  testnet4 - Delete testnet4 blockchain data"
+    echo "  stats    - Delete stats databases"
+    echo "  logs     - Delete all service logs"
+    exit 1
+  fi
+
+  DATADIR="/var/lib/hashpool"
+
+  case "$2" in
+    cashu)
+      echo "🗑️  Deleting all SQLite data (wallet and mint)..."
+      rm -f "$DATADIR/translator/wallet.sqlite" \
+            "$DATADIR/translator/wallet.sqlite-shm" \
+            "$DATADIR/translator/wallet.sqlite-wal" \
+            "$DATADIR/mint/mint.sqlite" \
+            "$DATADIR/mint/mint.sqlite-shm" \
+            "$DATADIR/mint/mint.sqlite-wal"
+      echo "✅ All SQLite data deleted"
+      ;;
+    regtest)
+      echo "🗑️  Deleting regtest blockchain data..."
+      rm -rf "$DATADIR/bitcoind/regtest"
+      echo "✅ Regtest data deleted"
+      ;;
+    testnet4)
+      echo "🗑️  Deleting testnet4 blockchain data..."
+      rm -rf "$DATADIR/bitcoind/testnet4"
+      echo "✅ Testnet4 data deleted"
+      ;;
+    stats)
+      echo "🗑️  Deleting stats databases..."
+      rm -f "$DATADIR/stats-pool/metrics.db" \
+            "$DATADIR/stats-pool/metrics.db-shm" \
+            "$DATADIR/stats-pool/metrics.db-wal" \
+            "$DATADIR/stats-proxy/stats.db" \
+            "$DATADIR/stats-proxy/stats.db-shm" \
+            "$DATADIR/stats-proxy/stats.db-wal"
+      echo "✅ Stats data deleted"
+      ;;
+    logs)
+      echo "🗑️  Deleting service logs..."
+      rm -f /var/log/hashpool/*.log
+      echo "✅ Service logs cleared"
+      ;;
+    *)
+      echo "Error: Unknown clean type '$2'"
+      echo "Valid types: cashu, regtest, testnet4, stats, logs"
+      exit 1
+      ;;
+  esac
+}
+
 case "${1:-}" in
   start)
     start_services
@@ -121,8 +180,13 @@ case "${1:-}" in
   watch)
     watch_logs
     ;;
+  clean)
+    clean_data "$@"
+    ;;
   *)
-    echo "Usage: $0 {start|stop|restart|status|logs <service>|watch}"
+    echo "Usage: $0 {start|stop|restart|status|logs <service>|watch|clean <type>}"
+    echo ""
+    echo "Clean types: cashu, regtest, testnet4, stats, logs"
     exit 1
     ;;
 esac

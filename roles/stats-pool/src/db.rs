@@ -27,9 +27,9 @@ impl StatsData {
         }
     }
 
-    /// Initialize metrics storage with optional database path
+    /// Initialize metrics storage with database path
     pub async fn init_metrics_storage(&self, db_path: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-        let path = db_path.unwrap_or(".devenv/state/stats-pool/metrics.db");
+        let path = db_path.ok_or("Database path is required for metrics storage")?;
         let storage = stats_sv2::storage::SqliteStorage::new(path).await?;
         let mut guard = self.metrics_storage.write().await;
         *guard = Some(storage);

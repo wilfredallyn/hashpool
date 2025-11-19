@@ -51,7 +51,7 @@ struct SnapshotStorageConfig {
 impl Default for SnapshotStorageConfig {
     fn default() -> Self {
         Self {
-            db_path: Some(PathBuf::from(".devenv/state/stats-proxy.db")),
+            db_path: None,
             staleness_threshold_secs: Some(15),
         }
     }

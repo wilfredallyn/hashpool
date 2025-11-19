@@ -117,7 +117,7 @@ impl Config {
             .position(|arg| arg == "--metrics-db-path")
             .and_then(|i| args.get(i + 1))
             .cloned()
-            .unwrap_or_else(|| ".devenv/state/stats-pool/metrics.db".to_string());
+            .ok_or("Missing required argument: --metrics-db-path")?;
 
         Ok(Config {
             tcp_address,
