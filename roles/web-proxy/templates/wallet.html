@@ -224,7 +224,7 @@
                 const data = await response.json();
 
                 if (response.ok && data.success) {
-                    status.innerHTML = `Success! Minted ${data.amount} ehash<br><br>Redeem <a href="https://wallet.hashpool.dev" target="_blank" style="color: #00ff00; text-decoration: underline;">here</a>`;
+                    status.innerHTML = `Success! Minted ${data.amount} ehash<br><br>Redeem <a href="https://wallet.hashpool.dev/#token=${data.token}" target="_blank" style="color: #00ff00; text-decoration: underline;">here</a>`;
                     status.className = 'status success';
 
                     generateQR(data.token);
