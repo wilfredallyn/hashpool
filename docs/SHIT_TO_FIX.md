@@ -2,6 +2,53 @@
 
 Issues and improvements deferred during development to maintain focus on core functionality.
 
+## Critical / Production Bugs
+
+### Vardiff Update Causes Mass Miner Disconnection Loop
+
+**Status:** Reproduces on production (2025-11-21 16:02 UTC)
+**Priority:** CRITICAL - Causes total pool hashrate collapse
+**Impact:** All connected miners disconnect simultaneously, causing cascading reconnection attempts
+
+**Root Cause:**
+Pool vardiff (variable difficulty) update logic attempts to set `maximum_target` values that violate SV2 channel constraints, triggering `RequestedMaxTargetOutOfRange` errors. When the pool fails to send valid `SetTarget` messages to downstream channels, those channels become unable to operate. Miners immediately receive channel receiver errors and disconnect. Upon reconnect, they encounter the same failing vardiff update, creating an infinite disconnect loop.
+
+**Original Error Message:**
+```
+[WARN] pool_sv2::mining_pool: Failed to update extended channel channel_id=3 during vardiff RequestedMaxTargetOutOfRange
+[WARN] pool_sv2::mining_pool: Failed to update extended channel channel_id=8 during vardiff RequestedMaxTargetOutOfRange
+[WARN] pool_sv2::mining_pool: Failed to update extended channel channel_id=7 during vardiff RequestedMaxTargetOutOfRange
+```
+
+Followed by:
+```
+[ERROR] translator_sv2::sv1::downstream::downstream: Error receiving downstream message: RecvError
+[ERROR] translator_sv2::sv1::downstream::downstream: Downstream 462: error in downstream message handler: ChannelErrorReceiver(RecvError)
+[WARN] translator_sv2::status: Downstream [462] shutting down due to error: ChannelErrorReceiver(RecvError)
+```
+
+**Evidence:**
+- **pool.log (2025-11-21T16:02:25):** Repeated `RequestedMaxTargetOutOfRange` for channels 3, 7, 8
+- **proxy.log (2025-11-21T16:02:00+):** Downstream IDs 462-466+ connect, immediately receive `RecvError`, disconnect in rapid succession
+- **Symptom:** Reported hashrate drops to 0, "connected miners" stat keeps incrementing as same miners re-register on reconnect
+
+**Affected Code:**
+- `roles/pool/src/lib/mining_pool/mod.rs` - Vardiff update logic (location unknown, needs investigation)
+- The code that calculates `maximum_target` for `SetTarget` messages
+
+**What Needs To Happen:**
+1. Identify the exact vardiff calculation that produces invalid `maximum_target` values
+2. Understand SV2 channel max_target constraints and how they're negotiated
+3. Add validation before attempting `SetTarget` to fail gracefully instead of crashing channels
+4. Add integration test that simulates various network difficulty conditions to catch this regression
+
+**Notes:**
+- Need to trace how `maximum_target` is calculated in vardiff logic
+- Check if constraint comes from channel negotiation parameters or SV2 spec
+- Consider whether this is a difficulty spike issue or calculation bug
+
+---
+
 ## Blocked / Cannot Proceed
 
 ### Mint Service Missing SRI Spec APIs
