@@ -47,6 +47,13 @@
             text-align: left;
             border-bottom: 1px solid #00ff00;
         }
+        .miner-name {
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: inline-block;
+        }
         th {
             background: #0a0a0a;
             font-weight: bold;
@@ -149,7 +156,13 @@
                         iconCell.style.textAlign = 'center';
                         iconCell.innerHTML = '<span class="pickaxe-icon" aria-hidden="true"></span>';
 
-                        row.insertCell().textContent = miner.name || 'Unknown';
+                        const nameCell = row.insertCell();
+                        const nameSpan = document.createElement('span');
+                        nameSpan.className = 'miner-name';
+                        nameSpan.textContent = miner.name || 'Unknown';
+                        nameSpan.title = miner.name || 'Unknown';
+                        nameCell.appendChild(nameSpan);
+
                         row.insertCell().textContent = miner.id || '-';
                         row.insertCell().textContent = miner.address || '-';
                         row.insertCell().textContent = miner.hashrate || '0 H/s';
