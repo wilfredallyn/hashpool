@@ -6,6 +6,7 @@
 use super::TranslatorSv2;
 use stats::stats_adapter::{MinerInfo, PoolConnection, TranslatorStatus, StatsSnapshotProvider};
 use stats_sv2::types::{DownstreamSnapshot, ServiceSnapshot, ServiceType, unix_timestamp};
+use stats_sv2::metrics::derive_hashrate;
 use std::time::SystemTime;
 
 // Unix timestamp helper (kept for potential future use)
@@ -57,11 +58,17 @@ impl StatsSnapshotProvider for TranslatorSv2 {
                     } else {
                         miner.address.to_string()
                     };
+                    // Calculate hashrate from windowed metrics instead of using stale estimated_hashrate
+                    // This ensures real-time hashrate calculation from recent shares
+                    let window_seconds = miner.metrics_collector.window_seconds();
+                    let sum_difficulty = miner.metrics_collector.sum_difficulty_in_window();
+                    let hashrate = derive_hashrate(sum_difficulty, window_seconds);
+
                     MinerInfo {
                         name: miner.name,
                         id: miner.id,
                         address,
-                        hashrate: miner.estimated_hashrate,
+                        hashrate,
                         shares_submitted: miner.shares_submitted,
                         connected_at: connected_timestamp,
                     }
