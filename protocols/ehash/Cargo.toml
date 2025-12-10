@@ -12,8 +12,8 @@ binary_sv2 = { version = "^4.0.0", path = "../v2/binary-sv2" }
 const_sv2 = { version = "^3.0.0", path = "../v2/const-sv2" }
 mint_quote_sv2 = { version = "^1.0.0", path = "../v2/subprotocols/mint-quote" }
 thiserror = "1"
-cdk = { git = "https://github.com/vnprc/cdk", rev = "59b238f3" }
-cdk-common = { git = "https://github.com/vnprc/cdk", rev = "59b238f3" }
+cdk = { git = "https://github.com/vnprc/cdk", rev = "6cdde76c" }
+cdk-common = { git = "https://github.com/vnprc/cdk", rev = "6cdde76c" }
 derive_codec_sv2 = { version = "^1.0.0", path = "../v2/binary-sv2/derive_codec" }
 # Force std feature on toml to fix trait bound issues when used with CDK
 toml = { git = "https://github.com/diondokter/toml-rs", rev = "c4161aa", features = ["std"] }
