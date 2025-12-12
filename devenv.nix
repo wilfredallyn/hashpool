@@ -104,7 +104,7 @@ in {
 
       # Clone and build
       git clone https://github.com/vnprc/cdk.git .
-      git checkout 548ceed50
+      git checkout 77df2ae4
       cargo build --release --bin cdk-cli
 
       # Copy to hashpool bin directory
