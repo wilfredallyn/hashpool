@@ -37,8 +37,8 @@ config_helpers_sv2 = { path = "../roles-utils/config-helpers" }
 shared_config = { path = "../roles-utils/config" }
 stats = { path = "../roles-utils/stats" }
 stats-sv2 = { path = "../roles-utils/stats-sv2" }
-cdk = { git = "https://github.com/vnprc/cdk.git", rev = "6cdde76c" }
-cdk-sqlite = { git = "https://github.com/vnprc/cdk.git", rev = "6cdde76c" }
+cdk = { git = "https://github.com/vnprc/cdk.git", rev = "548ceed50" }
+cdk-sqlite = { git = "https://github.com/vnprc/cdk.git", rev = "548ceed50" }
 bip39 = "2.0"
 anyhow = "1.0"
 binary_sv2 = { path = "../../protocols/v2/binary-sv2" }

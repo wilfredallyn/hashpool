@@ -15,12 +15,12 @@ use anyhow::{Context, Result};
 use async_channel::unbounded;
 use bip39::Mnemonic;
 use cdk::{
-    nuts::{CurrencyUnit, SecretKey},
+    nuts::{CurrencyUnit, Id, SecretKey},
     wallet::Wallet,
-    Amount,
+    Amount, MiningShareBatchEntry,
 };
 use cdk_sqlite::WalletSqliteDatabase;
-use std::{net::SocketAddr, path::Path, str::FromStr, sync::Arc};
+use std::{collections::HashMap, net::SocketAddr, path::Path, str::FromStr, sync::Arc};
 use tokio::{sync::mpsc, time::Duration};
 use tracing::{debug, error, info, warn};
 
@@ -483,100 +483,106 @@ impl TranslatorSv2 {
             return Ok(0);
         }
 
-        let mut total_minted = 0u64;
+        let mut quotes_by_keyset: HashMap<Id, Vec<MiningShareBatchEntry>> = HashMap::new();
 
         for quote_id in quote_ids.iter() {
-            match Self::fetch_and_add_quote_to_wallet(wallet, quote_id).await {
-                Ok(_) => match wallet.mint_quote_state_mining_share(quote_id).await {
-                    Ok(quote_response) => {
-                        if quote_response.is_fully_issued() {
-                            debug!(
-                                "Quote {} is already fully issued ({}), skipping",
-                                quote_id, quote_response.amount_issued
-                            );
+            debug!("🔍 Fetching quote {} from mint", quote_id);
+            match wallet
+                .mint_quote_state_mining_share(quote_id)
+                .await
+                .with_context(|| format!("Failed to fetch quote {} from mint", quote_id))
+            {
+                Ok(quote_response) => {
+                    debug!(
+                        "💾 Quote {} fetched and added to wallet (state: {:?})",
+                        quote_id, quote_response.state
+                    );
+
+                    if quote_response.is_fully_issued() {
+                        continue;
+                    }
+
+                    let total_amount = match quote_response.amount {
+                        Some(amount) => amount,
+                        None => {
+                            warn!("Quote {} missing amount, skipping", quote_id);
                             continue;
                         }
+                    };
 
-                        let amount = quote_response.amount.unwrap_or(Amount::ZERO);
-                        let keyset_id = quote_response.keyset_id;
-
-                        let secret_key = match locking_privkey {
-                            Some(privkey_hex) => match hex::decode(privkey_hex) {
-                                Ok(privkey_bytes) => match SecretKey::from_slice(&privkey_bytes) {
-                                    Ok(sk) => sk,
-                                    Err(e) => {
-                                        error!(
-                                            "Invalid secret key format for quote {}: {}",
-                                            quote_id, e
-                                        );
-                                        continue;
-                                    }
-                                },
-                                Err(e) => {
-                                    error!(
-                                        "Failed to decode secret key hex for quote {}: {}",
-                                        quote_id, e
-                                    );
-                                    continue;
-                                }
-                            },
-                            None => {
-                                error!(
-                                    "Secret key is required for mining share minting (quote {})",
-                                    quote_id
-                                );
-                                continue;
-                            }
-                        };
-
-                        match wallet
-                            .mint_mining_share(quote_id, amount, keyset_id, secret_key)
-                            .await
-                        {
-                            Ok(proofs) => {
-                                let amount: u64 = proofs.iter().map(|p| u64::from(p.amount)).sum();
-                                total_minted += amount;
-                            }
-                            Err(e) => {
-                                warn!("Failed to mint quote {}: {}", quote_id, e);
-                            }
-                        }
+                    if total_amount <= quote_response.amount_issued {
+                        continue;
                     }
-                    Err(e) => {
-                        warn!("Failed to get quote details for {}: {}", quote_id, e);
+
+                    let amount_to_mint = total_amount - quote_response.amount_issued;
+                    if amount_to_mint == Amount::ZERO {
+                        continue;
                     }
-                },
+
+                    quotes_by_keyset
+                        .entry(quote_response.keyset_id)
+                        .or_default()
+                        .push(MiningShareBatchEntry::new(
+                            quote_id.clone(),
+                            amount_to_mint,
+                            quote_response.keyset_id,
+                        ));
+                }
                 Err(e) => {
                     warn!("Failed to fetch quote {} details: {}", quote_id, e);
                 }
             }
         }
 
+        if quotes_by_keyset.is_empty() {
+            warn!("😞 No tokens were minted from any quotes");
+            return Ok(0);
+        }
+
+        let secret_key = match locking_privkey {
+            Some(privkey_hex) => match hex::decode(privkey_hex) {
+                Ok(privkey_bytes) => match SecretKey::from_slice(&privkey_bytes) {
+                    Ok(sk) => sk,
+                    Err(e) => {
+                        error!("Invalid secret key format: {}", e);
+                        return Ok(0);
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to decode secret key hex: {}", e);
+                    return Ok(0);
+                }
+            },
+            None => {
+                error!("Secret key is required for mining share minting");
+                return Ok(0);
+            }
+        };
+
+        let mut total_minted = 0u64;
+        let mut minted_quote_count = 0usize;
+
+        for (keyset_id, entries) in quotes_by_keyset.into_iter() {
+            debug!(?keyset_id, quote_count = entries.len(), "Minting mining share batch");
+            match wallet.mint_mining_share_batch(&entries, &secret_key).await {
+                Ok(proofs) => {
+                    let batch_amount: u64 = proofs.iter().map(|p| u64::from(p.amount)).sum();
+                    total_minted += batch_amount;
+                    minted_quote_count += entries.len();
+                    info!(?keyset_id, minted_amount = batch_amount, quote_count = entries.len());
+                }
+                Err(e) => {
+                    warn!(?keyset_id, "Failed to mint mining share batch: {}", e);
+                }
+            }
+        }
+
         if total_minted > 0 {
-            info!(
-                "Minted {} ehash from {} quotes",
-                total_minted,
-                quote_ids.len()
-            );
+            info!("Minted {} ehash from {} quotes", total_minted, minted_quote_count);
         } else {
             warn!("😞 No tokens were minted from any quotes");
         }
 
         Ok(total_minted)
-    }
-
-    async fn fetch_and_add_quote_to_wallet(wallet: &Arc<Wallet>, quote_id: &str) -> Result<()> {
-        debug!("🔍 Fetching quote {} from mint", quote_id);
-
-        let quote = wallet
-            .mint_quote_state_mining_share(quote_id)
-            .await
-            .with_context(|| format!("Failed to fetch quote {} from mint", quote_id))?;
-
-        debug!(
-            "💾 Quote {} fetched and added to wallet (state: {:?})",
-            quote_id, quote.state
-        );
-        Ok(())
     }
 }
